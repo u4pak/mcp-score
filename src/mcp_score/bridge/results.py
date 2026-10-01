@@ -7,21 +7,31 @@ against it. The bridges build them from the applications' replies.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 __all__ = [
     "ApplicationReply",
+    "Articulation",
+    "ArticulationSet",
     "BarlineSet",
     "ChordSymbolAdded",
+    "Clef",
+    "ClefSet",
     "CursorInfo",
     "CursorPosition",
     "Duration",
     "DynamicAdded",
     "Element",
     "KeySignatureSet",
+    "LineAdded",
+    "LineType",
     "MeasuresAppended",
     "Note",
     "NoteAdded",
+    "Notehead",
+    "NoteheadSet",
     "Part",
     "RehearsalMarkAdded",
     "Result",
@@ -29,6 +39,8 @@ __all__ = [
     "SelectedRange",
     "SelectionProperties",
     "TempoSet",
+    "TextAdded",
+    "TextStyle",
     "TimeSignature",
     "TimeSignatureSet",
     "Transposed",
@@ -212,3 +224,120 @@ class Transposed(Result):
     semitones: int
     notes: int
     """How many notes were moved."""
+
+
+# ── Notation on existing notes, lines, text and clefs ─────────────────
+
+type Articulation = Literal[
+    "staccato",
+    "staccatissimo",
+    "wedge",
+    "tenuto",
+    "accent",
+    "marcato",
+    "harmonic",
+    "plus",
+    "up_bow",
+    "down_bow",
+    "fermata",
+    "square_fermata",
+    "triangle_fermata",
+]
+"""An articulation mark on a note or chord."""
+
+type Notehead = Literal[
+    "normal",
+    "cross",
+    "diamond",
+    "slash",
+    "slash_without_stem",
+    "cross_or_diamond",
+    "black_and_white_diamond",
+    "headless",
+    "stemless",
+    "silent",
+    "cue",
+    "slashed",
+    "back_slashed",
+    "arrow_down",
+    "arrow_up",
+    "inverted_triangle",
+]
+"""A notehead shape."""
+
+type LineType = Literal[
+    "slur",
+    "slur_below",
+    "crescendo",
+    "diminuendo",
+    "trill",
+    "ottava",
+    "ottava_bassa",
+    "quindicesima",
+    "quindicesima_bassa",
+    "pedal",
+    "glissando",
+]
+"""A line spanning measures: slurs, hairpins, trills, octave lines, pedal."""
+
+type TextStyle = Literal["technique", "expression", "plain", "boxed"]
+"""How staff text is styled: technique (pizz.), expression (dolce), plain, boxed."""
+
+type Clef = Literal[
+    "treble",
+    "treble_8vb",
+    "treble_8va",
+    "bass",
+    "bass_8vb",
+    "alto",
+    "tenor",
+    "soprano",
+    "mezzo_soprano",
+    "baritone",
+    "percussion",
+]
+"""A clef; baritone is the F clef on the middle line."""
+
+
+class ArticulationSet(Result):
+    articulation: Articulation
+    removed: bool
+    """True when the articulation was taken off rather than added."""
+    start_measure: int
+    end_measure: int
+    staff: int
+    beat: int | None
+    """The beat the change was limited to, or None for every note."""
+    notes: int
+    """How many notes and chords were changed."""
+
+
+class NoteheadSet(Result):
+    notehead: Notehead
+    start_measure: int
+    end_measure: int
+    staff: int
+    beat: int | None
+    """The beat the change was limited to, or None for every note."""
+    notes: int
+    """How many noteheads were changed (each note of a chord counts)."""
+
+
+class LineAdded(Result):
+    line: LineType
+    start_measure: int
+    end_measure: int
+    staff: int
+
+
+class TextAdded(Result):
+    text: str
+    style: TextStyle
+    measure: int
+    staff: int
+
+
+class ClefSet(Result):
+    clef: Clef
+    measure: int
+    staff: int

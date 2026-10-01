@@ -113,6 +113,14 @@ mcp-score install-sibelius-plugin
 
 This copies `McpScoreBridge.plg` into Sibelius's per-user plug-ins folder (`%APPDATA%\Avid\Sibelius\Plugins` on Windows, `~/Library/Application Support/Avid/Sibelius/Plugins` on macOS). Restart Sibelius, enable Sibelius Connect on the Input Devices page of its preferences, open a score and ask Claude to "Connect to Sibelius." Sibelius asks you to allow the connection the first time.
 
+Besides the tools that work with MuseScore, Sibelius can also take articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal, glissandi), staff text and clefs:
+
+> "Put staccatos on every note in measures 1-4 of the flute."
+
+> "Use slash noteheads in the guitar part from measure 9 to 16."
+
+> "Add a crescendo hairpin over measures 5-6 and write 'pizz.' at measure 7 of the cello."
+
 ## Next steps
 
 - [Architecture](architecture.md) -- understand how mcp-score is structured

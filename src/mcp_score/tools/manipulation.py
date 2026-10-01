@@ -5,7 +5,8 @@ if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
 Dorico's Remote Control API triggers commands but cannot type into
 popovers or move the selection, so most of these tools work with
-MuseScore and Sibelius only.
+MuseScore and Sibelius only. Articulations, noteheads, lines, staff text
+and clefs work with Sibelius only for now.
 """
 
 from __future__ import annotations
@@ -13,16 +14,26 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from mcp_score.bridge.results import (
+    Articulation,
+    ArticulationSet,
     BarlineSet,
     ChordSymbolAdded,
+    Clef,
+    ClefSet,
     CursorPosition,
     Duration,
     DynamicAdded,
     KeySignatureSet,
+    LineAdded,
+    LineType,
     MeasuresAppended,
     NoteAdded,
+    Notehead,
+    NoteheadSet,
     RehearsalMarkAdded,
     TempoSet,
+    TextAdded,
+    TextStyle,
     TimeSignatureSet,
     Transposed,
 )
@@ -274,6 +285,145 @@ async def undo_last_action(context: ScoreContext) -> CursorPosition:
     return await require_bridge(context).undo()
 
 
+def _require_beat(beat: int | None) -> None:
+    if beat is not None and beat < 1:
+        raise ToolError("beat must be >= 1.")
+
+
+@score_tool
+async def set_live_articulation(
+    context: ScoreContext,
+    start_measure: int,
+    end_measure: int,
+    articulation: Articulation,
+    staff: int = 0,
+    beat: int | None = None,
+    remove: bool = False,
+) -> ArticulationSet:
+    """Add an articulation to the notes of a passage in the live score.
+
+    Every note and chord in the measures gets the articulation, or only
+    those starting on `beat` in each measure. Rests are left alone. Sibelius
+    only for now.
+
+    Args:
+        start_measure: First measure (1-indexed).
+        end_measure: Last measure (inclusive, 1-indexed).
+        articulation: The articulation; "fermata" is the usual pause.
+        staff: Staff index (0-indexed, default: 0).
+        beat: Only notes starting on this beat (1-indexed, counted in the
+            time signature's beat unit). Omit for every note.
+        remove: Take the articulation off instead of adding it.
+    """
+    bridge = require_bridge(context)
+    require_measure_range(start_measure, end_measure)
+    _require_beat(beat)
+    return await bridge.set_articulation(
+        start_measure, end_measure, staff, articulation, beat, remove
+    )
+
+
+@score_tool
+async def set_live_notehead(
+    context: ScoreContext,
+    start_measure: int,
+    end_measure: int,
+    notehead: Notehead,
+    staff: int = 0,
+    beat: int | None = None,
+) -> NoteheadSet:
+    """Change the notehead of the notes of a passage in the live score.
+
+    Every note in the measures gets the notehead, or only the notes of
+    chords starting on `beat` in each measure; "normal" restores the usual
+    one. Sibelius only for now.
+
+    Args:
+        start_measure: First measure (1-indexed).
+        end_measure: Last measure (inclusive, 1-indexed).
+        notehead: The notehead shape ("slash" for rhythm slashes, "cross"
+            for ghost notes and percussion).
+        staff: Staff index (0-indexed, default: 0).
+        beat: Only notes starting on this beat (1-indexed, counted in the
+            time signature's beat unit). Omit for every note.
+    """
+    bridge = require_bridge(context)
+    require_measure_range(start_measure, end_measure)
+    _require_beat(beat)
+    return await bridge.set_notehead(start_measure, end_measure, staff, notehead, beat)
+
+
+@score_tool
+async def add_live_line(
+    context: ScoreContext,
+    start_measure: int,
+    end_measure: int,
+    line: LineType,
+    staff: int = 0,
+) -> LineAdded:
+    """Add a line from the start of one measure to the end of another.
+
+    Slurs, hairpins, trills, octave lines, pedal lines and glissandi.
+    Sibelius only for now.
+
+    Args:
+        start_measure: Measure the line starts at (1-indexed).
+        end_measure: Measure the line ends with (inclusive, 1-indexed).
+        line: The kind of line.
+        staff: Staff index (0-indexed, default: 0).
+    """
+    bridge = require_bridge(context)
+    require_measure_range(start_measure, end_measure)
+    return await bridge.add_line(start_measure, end_measure, staff, line)
+
+
+@score_tool
+async def add_live_text(
+    context: ScoreContext,
+    measure: int,
+    text: str,
+    style: TextStyle = "technique",
+    staff: int = 0,
+) -> TextAdded:
+    """Add staff text to a measure in the live score.
+
+    Technique text for playing instructions ("pizz.", "con sord."),
+    expression text for character ("dolce", "espress."), or plain or boxed
+    text. Sibelius only for now.
+
+    Args:
+        measure: Measure number (1-indexed).
+        text: The text to write.
+        style: technique, expression, plain or boxed (default: technique).
+        staff: Staff index (0-indexed, default: 0).
+    """
+    bridge = require_bridge(context)
+    require_measure(measure)
+    if not text.strip():
+        raise ToolError("text must not be empty.")
+    await navigate(bridge, measure, staff)
+    return await bridge.add_text(text, style)
+
+
+@score_tool
+async def set_live_clef(
+    context: ScoreContext, measure: int, clef: Clef, staff: int = 0
+) -> ClefSet:
+    """Change the clef from a measure onward in the live score.
+
+    Sibelius only for now.
+
+    Args:
+        measure: Measure number (1-indexed).
+        clef: The clef; "treble_8vb" is the tenor-voice treble clef.
+        staff: Staff index (0-indexed, default: 0).
+    """
+    bridge = require_bridge(context)
+    require_measure(measure)
+    await navigate(bridge, measure, staff)
+    return await bridge.set_clef(clef)
+
+
 def register(server: MCPServer) -> None:
     for tool in (
         add_live_note,
@@ -286,6 +436,11 @@ def register(server: MCPServer) -> None:
         set_live_tempo,
         append_live_measures,
         transpose_passage,
+        set_live_articulation,
+        set_live_notehead,
+        add_live_line,
+        add_live_text,
+        set_live_clef,
         undo_last_action,
     ):
         server.tool()(tool)

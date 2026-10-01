@@ -236,7 +236,8 @@ if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
 Dorico's Remote Control API triggers commands but cannot type into
 popovers or move the selection, so most of these tools work with
-MuseScore and Sibelius only.
+MuseScore and Sibelius only. Articulations, noteheads, lines, staff text
+and clefs work with Sibelius only for now.
 
 ### `add_live_note`
 
@@ -436,6 +437,129 @@ unchanged. Not available with Dorico, which cannot select a range.
 | `semitones` | `int` |                            |
 | `notes`     | `int` | How many notes were moved. |
 
+### `set_live_articulation`
+
+Add an articulation to the notes of a passage in the live score.
+
+Every note and chord in the measures gets the articulation, or only
+those starting on `beat` in each measure. Rests are left alone. Sibelius
+only for now.
+
+| Parameter       | Type           | Default    | Description                                                                                                   |
+| --------------- | -------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`          | (required) | First measure (1-indexed).                                                                                    |
+| `end_measure`   | `int`          | (required) | Last measure (inclusive, 1-indexed).                                                                          |
+| `articulation`  | `Articulation` | (required) | The articulation; "fermata" is the usual pause.                                                               |
+| `staff`         | `int`          | `0`        | Staff index (0-indexed, default: 0).                                                                          |
+| `beat`          | `int \| None`  | `None`     | Only notes starting on this beat (1-indexed, counted in the time signature's beat unit). Omit for every note. |
+| `remove`        | `bool`         | `false`    | Take the articulation off instead of adding it.                                                               |
+
+**Returns** `ArticulationSet`.
+
+| Field           | Type           | Description                                                 |
+| --------------- | -------------- | ----------------------------------------------------------- |
+| `articulation`  | `Articulation` |                                                             |
+| `removed`       | `bool`         | True when the articulation was taken off rather than added. |
+| `start_measure` | `int`          |                                                             |
+| `end_measure`   | `int`          |                                                             |
+| `staff`         | `int`          |                                                             |
+| `beat`          | `int \| None`  | The beat the change was limited to, or None for every note. |
+| `notes`         | `int`          | How many notes and chords were changed.                     |
+
+### `set_live_notehead`
+
+Change the notehead of the notes of a passage in the live score.
+
+Every note in the measures gets the notehead, or only the notes of
+chords starting on `beat` in each measure; "normal" restores the usual
+one. Sibelius only for now.
+
+| Parameter       | Type          | Default    | Description                                                                                                   |
+| --------------- | ------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`         | (required) | First measure (1-indexed).                                                                                    |
+| `end_measure`   | `int`         | (required) | Last measure (inclusive, 1-indexed).                                                                          |
+| `notehead`      | `Notehead`    | (required) | The notehead shape ("slash" for rhythm slashes, "cross" for ghost notes and percussion).                      |
+| `staff`         | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                          |
+| `beat`          | `int \| None` | `None`     | Only notes starting on this beat (1-indexed, counted in the time signature's beat unit). Omit for every note. |
+
+**Returns** `NoteheadSet`.
+
+| Field           | Type          | Description                                                    |
+| --------------- | ------------- | -------------------------------------------------------------- |
+| `notehead`      | `Notehead`    |                                                                |
+| `start_measure` | `int`         |                                                                |
+| `end_measure`   | `int`         |                                                                |
+| `staff`         | `int`         |                                                                |
+| `beat`          | `int \| None` | The beat the change was limited to, or None for every note.    |
+| `notes`         | `int`         | How many noteheads were changed (each note of a chord counts). |
+
+### `add_live_line`
+
+Add a line from the start of one measure to the end of another.
+
+Slurs, hairpins, trills, octave lines, pedal lines and glissandi.
+Sibelius only for now.
+
+| Parameter       | Type       | Default    | Description                                        |
+| --------------- | ---------- | ---------- | -------------------------------------------------- |
+| `start_measure` | `int`      | (required) | Measure the line starts at (1-indexed).            |
+| `end_measure`   | `int`      | (required) | Measure the line ends with (inclusive, 1-indexed). |
+| `line`          | `LineType` | (required) | The kind of line.                                  |
+| `staff`         | `int`      | `0`        | Staff index (0-indexed, default: 0).               |
+
+**Returns** `LineAdded`.
+
+| Field           | Type       | Description |
+| --------------- | ---------- | ----------- |
+| `line`          | `LineType` |             |
+| `start_measure` | `int`      |             |
+| `end_measure`   | `int`      |             |
+| `staff`         | `int`      |             |
+
+### `add_live_text`
+
+Add staff text to a measure in the live score.
+
+Technique text for playing instructions ("pizz.", "con sord."),
+expression text for character ("dolce", "espress."), or plain or boxed
+text. Sibelius only for now.
+
+| Parameter | Type        | Default       | Description                                                 |
+| --------- | ----------- | ------------- | ----------------------------------------------------------- |
+| `measure` | `int`       | (required)    | Measure number (1-indexed).                                 |
+| `text`    | `str`       | (required)    | The text to write.                                          |
+| `style`   | `TextStyle` | `"technique"` | technique, expression, plain or boxed (default: technique). |
+| `staff`   | `int`       | `0`           | Staff index (0-indexed, default: 0).                        |
+
+**Returns** `TextAdded`.
+
+| Field     | Type        | Description |
+| --------- | ----------- | ----------- |
+| `text`    | `str`       |             |
+| `style`   | `TextStyle` |             |
+| `measure` | `int`       |             |
+| `staff`   | `int`       |             |
+
+### `set_live_clef`
+
+Change the clef from a measure onward in the live score.
+
+Sibelius only for now.
+
+| Parameter | Type   | Default    | Description                                            |
+| --------- | ------ | ---------- | ------------------------------------------------------ |
+| `measure` | `int`  | (required) | Measure number (1-indexed).                            |
+| `clef`    | `Clef` | (required) | The clef; "treble_8vb" is the tenor-voice treble clef. |
+| `staff`   | `int`  | `0`        | Staff index (0-indexed, default: 0).                   |
+
+**Returns** `ClefSet`.
+
+| Field     | Type   | Description |
+| --------- | ------ | ----------- |
+| `clef`    | `Clef` |             |
+| `measure` | `int`  |             |
+| `staff`   | `int`  |             |
+
 ### `undo_last_action`
 
 Undo the last change in the connected application.
@@ -556,6 +680,16 @@ An application's reply passed on as it came, for data with no fixed shape.
 
 Whatever fields the application sends.
 
+### `Articulation`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
+### `Clef`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
 ### `CursorInfo`
 
 The cursor position and what is there.
@@ -591,6 +725,11 @@ What sits at the cursor: a chord, a rest, a single note or something else.
 | `tpc`      | `int \| None`        | Tonal pitch class of a single note.                                     |
 | `name`     | `str \| None`        | Name of a single note.                                                  |
 
+### `LineType`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
 ### `MeasureContent`
 
 | Field     | Type         | Description                                                   |
@@ -606,6 +745,11 @@ What sits at the cursor: a chord, a rest, a single note or something else.
 | `tpc`   | `int`         | Tonal pitch class, which fixes the spelling (C# versus Db). |
 | `name`  | `str \| None` | Note name with octave, when the application gives one.      |
 
+### `Notehead`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
 ### `Part`
 
 | Field         | Type  | Description                                    |
@@ -613,6 +757,11 @@ What sits at the cursor: a chord, a rest, a single note or something else.
 | `name`        | `str` |                                                |
 | `start_staff` | `int` | First staff of the part (0-indexed).           |
 | `end_staff`   | `int` | Last staff of the part (0-indexed, inclusive). |
+
+### `TextStyle`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
 
 ### `TimeSignature`
 

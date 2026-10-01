@@ -20,21 +20,31 @@ from websockets.protocol import State
 
 from mcp_score.bridge import BridgeError, BridgeRegistry, CommandResult, ScoreBridge
 from mcp_score.bridge.results import (
+    Articulation,
+    ArticulationSet,
     BarlineSet,
     ChordSymbolAdded,
+    Clef,
+    ClefSet,
     CursorInfo,
     CursorPosition,
     Duration,
     DynamicAdded,
     KeySignatureSet,
+    LineAdded,
+    LineType,
     MeasuresAppended,
     NoteAdded,
+    Notehead,
+    NoteheadSet,
     Part,
     RehearsalMarkAdded,
     ScoreInfo,
     SelectedRange,
     SelectionProperties,
     TempoSet,
+    TextAdded,
+    TextStyle,
     TimeSignature,
     TimeSignatureSet,
     Transposed,
@@ -104,6 +114,26 @@ DEFAULT_REPLIES: dict[str, BaseModel] = {
     "append_measures": MeasuresAppended(count=1, total_measures=9),
     "transpose": Transposed(semitones=0, notes=0),
     "undo": _START,
+    "set_articulation": ArticulationSet(
+        articulation="staccato",
+        removed=False,
+        start_measure=1,
+        end_measure=1,
+        staff=0,
+        beat=None,
+        notes=4,
+    ),
+    "set_notehead": NoteheadSet(
+        notehead="cross",
+        start_measure=1,
+        end_measure=1,
+        staff=0,
+        beat=None,
+        notes=4,
+    ),
+    "add_line": LineAdded(line="slur", start_measure=1, end_measure=2, staff=0),
+    "add_text": TextAdded(text="pizz.", style="technique", measure=1, staff=0),
+    "set_clef": ClefSet(clef="bass", measure=1, staff=0),
 }
 """What a ``FakeBridge`` answers for each operation unless a test says otherwise."""
 
@@ -280,6 +310,57 @@ class FakeBridge(ScoreBridge):
 
     async def undo(self) -> CursorPosition:
         return self._answer(CursorPosition, "undo")
+
+    async def set_articulation(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        articulation: Articulation,
+        beat: int | None,
+        remove: bool,
+    ) -> ArticulationSet:
+        return self._answer(
+            ArticulationSet,
+            "set_articulation",
+            start_measure,
+            end_measure,
+            staff,
+            articulation,
+            beat,
+            remove,
+        )
+
+    async def set_notehead(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        notehead: Notehead,
+        beat: int | None,
+    ) -> NoteheadSet:
+        return self._answer(
+            NoteheadSet,
+            "set_notehead",
+            start_measure,
+            end_measure,
+            staff,
+            notehead,
+            beat,
+        )
+
+    async def add_line(
+        self, start_measure: int, end_measure: int, staff: int, line: LineType
+    ) -> LineAdded:
+        return self._answer(
+            LineAdded, "add_line", start_measure, end_measure, staff, line
+        )
+
+    async def add_text(self, text: str, style: TextStyle) -> TextAdded:
+        return self._answer(TextAdded, "add_text", text, style)
+
+    async def set_clef(self, clef: Clef) -> ClefSet:
+        return self._answer(ClefSet, "set_clef", clef)
 
 
 # ── WebSocket doubles ────────────────────────────────────────────────

@@ -39,22 +39,27 @@ from mcp_score.bridge.remote_control import (
     HandshakeError,
 )
 from mcp_score.bridge.results import (
+    ArticulationSet,
     BarlineSet,
     ChordSymbolAdded,
+    ClefSet,
     CursorInfo,
     CursorPosition,
     Duration,
     DynamicAdded,
     Element,
     KeySignatureSet,
+    LineAdded,
     MeasuresAppended,
     Note,
     NoteAdded,
+    NoteheadSet,
     RehearsalMarkAdded,
     ScoreInfo,
     SelectedRange,
     SelectionProperties,
     TempoSet,
+    TextAdded,
     TimeSignatureSet,
     Transposed,
 )
@@ -62,6 +67,13 @@ from mcp_score.bridge.websocket import DEFAULT_HOST, WebSocketBridge
 
 if TYPE_CHECKING:
     from mcp_score.bridge.base import CommandResult
+    from mcp_score.bridge.results import (
+        Articulation,
+        Clef,
+        LineType,
+        Notehead,
+        TextStyle,
+    )
     from mcp_score.bridge.websocket import WebSocketTransport
 
 __all__ = ["DEFAULT_PORT", "PLUGIN_NAME", "PluginMethod", "SibeliusBridge"]
@@ -132,6 +144,83 @@ REHEARSAL_MARK = re.compile(r"[A-Za-z]{1,2}|\d+")
 """Rehearsal marks Sibelius can write as given: letters or a number."""
 
 DYNAMIC = re.compile(r"[pmfrszn]+")
+
+# ManuScript's articulation numbers ("Articulations" in the guide's Global
+# Constants); Sibelius calls a fermata a pause.
+ARTICULATIONS: dict[Articulation, int] = {
+    "staccato": 1,
+    "staccatissimo": 2,
+    "wedge": 3,
+    "tenuto": 4,
+    "accent": 5,
+    "marcato": 6,
+    "harmonic": 7,
+    "plus": 8,
+    "up_bow": 9,
+    "down_bow": 10,
+    "square_fermata": 12,
+    "fermata": 13,
+    "triangle_fermata": 14,
+}
+
+# ManuScript's notehead style indices ("Note Style Names"); Sibelius calls
+# slash noteheads beat noteheads.
+NOTEHEADS: dict[Notehead, int] = {
+    "normal": 0,
+    "cross": 1,
+    "diamond": 2,
+    "slash_without_stem": 3,
+    "slash": 4,
+    "cross_or_diamond": 5,
+    "black_and_white_diamond": 6,
+    "headless": 7,
+    "stemless": 8,
+    "silent": 9,
+    "cue": 10,
+    "slashed": 11,
+    "back_slashed": 12,
+    "arrow_down": 13,
+    "arrow_up": 14,
+    "inverted_triangle": 15,
+}
+
+# Sibelius line style identifiers ("Line Styles").
+LINE_STYLES: dict[LineType, str] = {
+    "slur": "line.staff.slur.up",
+    "slur_below": "line.staff.slur.down",
+    "crescendo": "line.staff.hairpin.crescendo",
+    "diminuendo": "line.staff.hairpin.diminuendo",
+    "trill": "line.staff.trill",
+    "ottava": "line.staff.octava.plus8",
+    "ottava_bassa": "line.staff.octava.minus8",
+    "quindicesima": "line.staff.octava.plus15",
+    "quindicesima_bassa": "line.staff.octava.minus15",
+    "pedal": "line.staff.pedal",
+    "glissando": "line.staff.gliss.straight",
+}
+
+# Sibelius staff text style identifiers ("Text Styles").
+TEXT_STYLES: dict[TextStyle, str] = {
+    "technique": "text.staff.technique",
+    "expression": "text.staff.expression",
+    "plain": "text.staff.plain",
+    "boxed": "text.staff.boxed",
+}
+
+# Sibelius clef style identifiers ("Clef Styles").
+CLEFS: dict[Clef, str] = {
+    "treble": "clef.treble",
+    "treble_8vb": "clef.treble.down.8",
+    "treble_8va": "clef.treble.up.8",
+    "bass": "clef.bass",
+    "bass_8vb": "clef.bass.down.8",
+    "alto": "clef.alto",
+    "tenor": "clef.tenor",
+    "soprano": "clef.soprano",
+    "mezzo_soprano": "clef.soprano.mezzo",
+    "baritone": "clef.baritone.f",
+    "percussion": "clef.percussion",
+}
 """Dynamics spelled with the letters the Music text font draws as dynamics."""
 
 
@@ -152,6 +241,11 @@ class PluginMethod(StrEnum):
     SET_TEMPO = "SetTempo"
     APPEND_BARS = "AppendBars"
     TRANSPOSE = "Transpose"
+    SET_ARTICULATION = "SetArticulation"
+    SET_NOTEHEAD = "SetNotehead"
+    ADD_LINE = "AddLine"
+    ADD_STAFF_TEXT = "AddStaffText"
+    SET_CLEF = "SetClef"
 
 
 # ── What the plug-in returns where no result model fits ───────────────
@@ -202,6 +296,16 @@ class _TempoReply(_PluginReply):
 
 class _TransposeReply(_PluginReply):
     notes: int
+
+
+class _NotesChanged(_PluginReply):
+    notes: int
+
+
+class _LineReply(_PluginReply):
+    start_measure: int
+    end_measure: int
+    staff: int
 
 
 class SibeliusBridge(WebSocketBridge):
@@ -518,6 +622,107 @@ class SibeliusBridge(WebSocketBridge):
     async def undo(self) -> CursorPosition:
         await self.invoke_commands(COMMAND_UNDO)
         return CursorPosition(measure=self._measure, staff=self._staff)
+
+    # ── Notation on existing notes, lines, text and clefs ───────────
+
+    async def set_articulation(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        articulation: Articulation,
+        beat: int | None,
+        remove: bool,
+    ) -> ArticulationSet:
+        reply = await self._run(
+            _NotesChanged,
+            PluginMethod.SET_ARTICULATION,
+            start_measure,
+            end_measure,
+            staff,
+            beat or 0,
+            ARTICULATIONS[articulation],
+            not remove,
+        )
+        return ArticulationSet(
+            articulation=articulation,
+            removed=remove,
+            start_measure=start_measure,
+            end_measure=end_measure,
+            staff=staff,
+            beat=beat,
+            notes=reply.notes,
+        )
+
+    async def set_notehead(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        notehead: Notehead,
+        beat: int | None,
+    ) -> NoteheadSet:
+        reply = await self._run(
+            _NotesChanged,
+            PluginMethod.SET_NOTEHEAD,
+            start_measure,
+            end_measure,
+            staff,
+            beat or 0,
+            NOTEHEADS[notehead],
+        )
+        return NoteheadSet(
+            notehead=notehead,
+            start_measure=start_measure,
+            end_measure=end_measure,
+            staff=staff,
+            beat=beat,
+            notes=reply.notes,
+        )
+
+    async def add_line(
+        self, start_measure: int, end_measure: int, staff: int, line: LineType
+    ) -> LineAdded:
+        reply = await self._run(
+            _LineReply,
+            PluginMethod.ADD_LINE,
+            start_measure,
+            end_measure,
+            staff,
+            LINE_STYLES[line],
+        )
+        return LineAdded(
+            line=line,
+            start_measure=reply.start_measure,
+            end_measure=reply.end_measure,
+            staff=reply.staff,
+        )
+
+    async def add_text(self, text: str, style: TextStyle) -> TextAdded:
+        # A backslash starts a Sibelius formatting command; write it literally.
+        position = await self._run(
+            CursorPosition,
+            PluginMethod.ADD_STAFF_TEXT,
+            self._measure,
+            self._staff,
+            self._position,
+            text.replace("\\", "\\\\"),
+            TEXT_STYLES[style],
+        )
+        return TextAdded(
+            text=text, style=style, measure=position.measure, staff=position.staff
+        )
+
+    async def set_clef(self, clef: Clef) -> ClefSet:
+        position = await self._run(
+            CursorPosition,
+            PluginMethod.SET_CLEF,
+            self._measure,
+            self._staff,
+            self._position,
+            CLEFS[clef],
+        )
+        return ClefSet(clef=clef, measure=position.measure, staff=position.staff)
 
 
 def _interval(semitones: int) -> tuple[int, int]:

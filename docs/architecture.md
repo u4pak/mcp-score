@@ -113,7 +113,7 @@ Sibelius 2024.3+ serves Sibelius Connect, a WebSocket API on port 1898 enabled o
 
 After the handshake there are two messages. `invokeCommands` runs Sibelius command IDs (the menu commands listed in chapter 5 of the guide) on the current selection; they take no parameters. `invokePlugin` calls a method of a ManuScript plug-in with arguments and returns its result as JSON.
 
-Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars and transposing. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
+Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars, transposing, and articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal, glissandi), staff text and clefs. Those last five are `ScoreBridge` operations that refuse by default, so the MuseScore and Dorico bridges report them as not supported yet. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
 
 Sibelius support is experimental: the bridge and plug-in follow the ManuScript Language Guide but have not been run against a real Sibelius.
 
@@ -132,6 +132,7 @@ Dorico's Remote Control WebSocket API is fundamentally a **command execution and
 | Add rehearsal marks                                            |   Yes (with custom text)   | Yes (auto-numbered only) | Yes (letters or numbers as given) |
 | Navigate to measure and staff                                  |            Yes             |       Measure only       |   Yes (via ManuScript plug-in)    |
 | Notes, chord symbols, dynamics, key/time signatures, tempo     |            Yes             |            No            |   Yes (via ManuScript plug-in)    |
+| Articulations, noteheads, lines, staff text, clefs             |             No             |            No            |   Yes (via ManuScript plug-in)    |
 | Read the element at the cursor                                 |    Yes (via QML plugin)    |            No            |   Yes (via ManuScript plug-in)    |
 | Read cursor position                                           | Yes (measure, beat, staff) | Limited (UI state only)  |    Yes (measure, beat, staff)     |
 

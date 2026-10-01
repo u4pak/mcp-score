@@ -7,21 +7,35 @@ method calls with the cursor it tracks) and how it reads what comes back.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, get_args
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from mcp_score.bridge import BridgeError
 from mcp_score.bridge.remote_control import DEFAULT_CLIENT_NAME, HANDSHAKE_VERSION
-from mcp_score.bridge.results import Duration, Element, Note
+from mcp_score.bridge.results import (
+    Articulation,
+    Clef,
+    Duration,
+    Element,
+    LineType,
+    Note,
+    Notehead,
+    TextStyle,
+)
 from mcp_score.bridge.sibelius import (
+    ARTICULATIONS,
+    CLEFS,
     DEFAULT_PORT,
     INTERVAL_AUGMENTED,
     INTERVAL_MAJOR,
     INTERVAL_MINOR,
     INTERVAL_PERFECT,
+    LINE_STYLES,
+    NOTEHEADS,
     PLUGIN_NAME,
+    TEXT_STYLES,
     PluginMethod,
     SibeliusBridge,
 )
@@ -679,3 +693,144 @@ class TestSibeliusTranspose:
             [2, 5, 1, 1, degree, interval_type],
         )
         assert (result.semitones, result.notes) == (semitones, 12)
+
+
+# ── Articulations, noteheads, lines, text and clefs ──────────────────
+
+
+class TestSibeliusNotationVocabulary:
+    @pytest.mark.parametrize(
+        ("mapping", "names"),
+        [
+            pytest.param(ARTICULATIONS, Articulation, id="articulations"),
+            pytest.param(NOTEHEADS, Notehead, id="noteheads"),
+            pytest.param(LINE_STYLES, LineType, id="lines"),
+            pytest.param(TEXT_STYLES, TextStyle, id="text-styles"),
+            pytest.param(CLEFS, Clef, id="clefs"),
+        ],
+    )
+    def test_every_name_a_tool_accepts_has_a_sibelius_value(
+        self, mapping: dict[str, object], names: Any
+    ) -> None:
+        # Act
+        accepted = set(get_args(names.__value__))
+
+        # Assert: no tool argument can reach the bridge without a mapping
+        assert set(mapping) == accepted
+        assert len(set(mapping.values())) == len(mapping)
+
+
+class TestSibeliusNotation:
+    @pytest.mark.anyio()
+    async def test_articulation_passes_manuscript_number_and_beat(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(plugin_reply({"notes": 3}))
+
+        # Act
+        result = await bridge.set_articulation(2, 4, 1, "fermata", 3, False)
+
+        # Assert: fermata is ManuScript's PauseArtic (13); True turns it on
+        assert _plugin_calls(connection) == [
+            ("SetArticulation", [2, 4, 1, 3, 13, True])
+        ]
+        assert (result.articulation, result.removed, result.notes) == (
+            "fermata",
+            False,
+            3,
+        )
+
+    @pytest.mark.anyio()
+    async def test_removing_articulation_on_every_beat(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(plugin_reply({"notes": 8}))
+
+        # Act
+        result = await bridge.set_articulation(1, 1, 0, "staccato", None, True)
+
+        # Assert: beat 0 means every beat, False turns it off
+        assert _plugin_calls(connection) == [
+            ("SetArticulation", [1, 1, 0, 0, 1, False])
+        ]
+        assert (result.removed, result.beat) == (True, None)
+
+    @pytest.mark.anyio()
+    async def test_notehead_passes_manuscript_style_index(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(plugin_reply({"notes": 12}))
+
+        # Act
+        result = await bridge.set_notehead(5, 8, 0, "slash", None)
+
+        # Assert: Sibelius calls a slash notehead a beat notehead (4)
+        assert _plugin_calls(connection) == [("SetNotehead", [5, 8, 0, 0, 4])]
+        assert result.notes == 12
+
+    @pytest.mark.anyio()
+    async def test_line_passes_sibelius_style_id(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"start_measure": 3, "end_measure": 6, "staff": 2})
+        )
+
+        # Act
+        result = await bridge.add_line(3, 6, 2, "ottava_bassa")
+
+        # Assert
+        assert _plugin_calls(connection) == [
+            ("AddLine", [3, 6, 2, "line.staff.octava.minus8"])
+        ]
+        assert (result.line, result.start_measure, result.end_measure) == (
+            "ottava_bassa",
+            3,
+            6,
+        )
+
+    @pytest.mark.anyio()
+    async def test_text_goes_at_the_cursor_with_backslashes_kept_literal(
+        self,
+    ) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            _at(4, 1),
+            plugin_reply({"measure": 4, "staff": 1}),
+        )
+        await bridge.go_to_measure(4)
+
+        # Act
+        result = await bridge.add_text("a\\b", "expression")
+
+        # Assert
+        assert _plugin_calls(connection)[-1] == (
+            "AddStaffText",
+            [4, 1, 0, "a\\\\b", "text.staff.expression"],
+        )
+        assert (result.text, result.measure, result.staff) == ("a\\b", 4, 1)
+
+    @pytest.mark.anyio()
+    async def test_clef_goes_at_the_cursor(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            _at(9, 2), plugin_reply({"measure": 9, "staff": 2})
+        )
+        await bridge.go_to_staff(2)
+
+        # Act
+        result = await bridge.set_clef("treble_8vb")
+
+        # Assert
+        assert _plugin_calls(connection)[-1] == (
+            "SetClef",
+            [9, 2, 0, "clef.treble.down.8"],
+        )
+        assert result.clef == "treble_8vb"
+
+    @pytest.mark.anyio()
+    async def test_plugin_refusal_of_a_passage_reaches_the_caller(self) -> None:
+        # Arrange
+        bridge, _ = await _connected_bridge(
+            plugin_reply({"error": "Measure 40 out of range (1-32)"})
+        )
+
+        # Act / Assert
+        with pytest.raises(BridgeError, match="Measure 40 out of range"):
+            await bridge.add_line(38, 40, 0, "crescendo")

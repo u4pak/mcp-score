@@ -21,7 +21,7 @@ src/mcp_score/
     base.py           Shared tool plumbing: ToolError, score_tool, bridge and measure guards
     connection.py     Connect/disconnect MuseScore, Dorico & Sibelius, ping, score info
     analysis.py       Read passages and measures from live score
-    manipulation.py   Modify live score (notes, rehearsal marks, dynamics, chords, barlines, keys, time, tempo, measures, transpose, undo)
+    manipulation.py   Modify live score (notes, rehearsal marks, dynamics, chords, barlines, keys, time, tempo, measures, transpose, undo; articulations, noteheads, lines, staff text, clefs on Sibelius)
     generate.py       Run music21 scripts and serve the score-generate guide (any MCP client)
     render.py         Export score files through the MuseScore command line
   bridge/
@@ -105,7 +105,7 @@ MCP tools fall into these categories:
 
 1. **Connection** — manage WebSocket bridges to MuseScore, Dorico and Sibelius
 2. **Analysis** — read and understand musical content from the live score
-3. **Manipulation** — modify the live score (notes, rehearsal marks, dynamics, chords, barlines, keys, time signatures, tempo, measures, transpose, undo)
+3. **Manipulation** — modify the live score (notes, rehearsal marks, dynamics, chords, barlines, keys, time signatures, tempo, measures, transpose, undo; articulations, noteheads, lines, staff text and clefs, which only the Sibelius bridge implements so far)
 4. **Generation** — run a music21 script (`generate_score`) and serve the skill text (`score_generation_guide`) so clients other than Claude Code get the same workflow
 5. **Rendering** — export a score file through the MuseScore command line (`render_score`); needs MuseScore installed, not running
 

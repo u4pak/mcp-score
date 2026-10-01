@@ -43,6 +43,22 @@ if (problem = '')
 return problem;}"
 	StaffBar "(score, bar, staff) {
 return score.NthStaff(staff + 1).NthBar(bar);}"
+	CheckPassage "(score, startBar, endBar, staff) {
+problem = CheckPosition(score, startBar, staff);
+if (problem = '')
+{
+	problem = CheckBar(score, endBar);
+}
+return problem;}"
+	BeatPosition "(score, bar, beat) {
+// Where beat (1-indexed, in the time signature's beat unit) starts in bar,
+// or -1, meaning every position, when beat is 0.
+if (beat < 1)
+{
+	return -1;
+}
+timeSignature = score.SystemStaff.CurrentTimeSignature(bar);
+return (beat - 1) * (1024 / timeSignature.Denominator);}"
 	Ping "() {
 return 'pong';}"
 	GetScore "() {
@@ -344,4 +360,124 @@ for each NoteRest noteRest in selection
 }
 selection.Transpose(degree, intervalType, False, False);
 return CreateDictionary('notes', notes);}"
+	SetArticulation "(startBar, endBar, staff, beat, articulation, present) {
+// Turn an articulation on (present True) or off on every note and chord
+// of the passage, or on those starting on beat (0 means every beat).
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPassage(score, startBar, endBar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+notes = 0;
+bar = startBar;
+while (bar <= endBar)
+{
+	position = BeatPosition(score, bar, beat);
+	for each NoteRest noteRest in StaffBar(score, bar, staff)
+	{
+		if ((noteRest.NoteCount > 0) and ((position < 0) or (noteRest.Position = position)))
+		{
+			noteRest.SetArticulation(articulation, present);
+			notes = notes + 1;
+		}
+	}
+	bar = bar + 1;
+}
+return CreateDictionary('notes', notes);}"
+	SetNotehead "(startBar, endBar, staff, beat, noteStyle) {
+// Give every note of the passage, or of the chords starting on beat (0
+// means every beat), the notehead style with index noteStyle.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPassage(score, startBar, endBar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+notes = 0;
+bar = startBar;
+while (bar <= endBar)
+{
+	position = BeatPosition(score, bar, beat);
+	for each NoteRest noteRest in StaffBar(score, bar, staff)
+	{
+		if ((position < 0) or (noteRest.Position = position))
+		{
+			for each note in noteRest
+			{
+				note.NoteStyle = noteStyle;
+				notes = notes + 1;
+			}
+		}
+	}
+	bar = bar + 1;
+}
+return CreateDictionary('notes', notes);}"
+	AddLine "(startBar, endBar, staff, styleId) {
+// A line of style styleId from the start of startBar to the end of endBar.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPassage(score, startBar, endBar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+duration = 0;
+bar = startBar;
+while (bar <= endBar)
+{
+	duration = duration + StaffBar(score, bar, staff).Length;
+	bar = bar + 1;
+}
+line = StaffBar(score, startBar, staff).AddLine(0, duration, styleId);
+if (line = null)
+{
+	return Failure('Sibelius could not add the line ' & styleId & '.');
+}
+return CreateDictionary('start_measure', startBar, 'end_measure', endBar, 'staff', staff);}"
+	AddStaffText "(bar, staff, position, text, styleId) {
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+added = StaffBar(score, bar, staff).AddText(position, text, styleId);
+if (added = null)
+{
+	return Failure('Sibelius could not add the text.');
+}
+return CreateDictionary('measure', bar, 'staff', staff);}"
+	SetClef "(bar, staff, position, clefId) {
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+clef = StaffBar(score, bar, staff).AddClef(position, clefId);
+if (clef = null)
+{
+	return Failure('Sibelius could not add the clef ' & clefId & '.');
+}
+return CreateDictionary('measure', bar, 'staff', staff);}"
 }

@@ -22,20 +22,25 @@ from pydantic import BaseModel
 from mcp_score.bridge import BridgeError
 from mcp_score.bridge.results import (
     ApplicationReply,
+    ArticulationSet,
     BarlineSet,
     ChordSymbolAdded,
+    ClefSet,
     CursorInfo,
     CursorPosition,
     Duration,
     DynamicAdded,
     KeySignatureSet,
+    LineAdded,
     MeasuresAppended,
     NoteAdded,
+    NoteheadSet,
     Part,
     RehearsalMarkAdded,
     ScoreInfo,
     SelectionProperties,
     TempoSet,
+    TextAdded,
     TimeSignature,
     TimeSignatureSet,
     Transposed,
@@ -56,11 +61,16 @@ from mcp_score.tools.connection import (
 from mcp_score.tools.manipulation import (
     add_live_chord_symbol,
     add_live_dynamic,
+    add_live_line,
     add_live_note,
     add_live_rehearsal_mark,
+    add_live_text,
     append_live_measures,
+    set_live_articulation,
     set_live_barline,
+    set_live_clef,
     set_live_key_signature,
+    set_live_notehead,
     set_live_tempo,
     set_live_time_signature,
     transpose_passage,
@@ -202,6 +212,20 @@ class TestToolsWithoutConnection:
                 id="transpose_passage",
             ),
             pytest.param(undo_last_action, id="undo_last_action"),
+            pytest.param(
+                bind_arguments(set_live_articulation, 1, 2, "accent"),
+                id="set_live_articulation",
+            ),
+            pytest.param(
+                bind_arguments(set_live_notehead, 1, 2, "slash"),
+                id="set_live_notehead",
+            ),
+            pytest.param(
+                bind_arguments(add_live_line, 1, 2, "crescendo"),
+                id="add_live_line",
+            ),
+            pytest.param(bind_arguments(add_live_text, 1, "pizz."), id="add_live_text"),
+            pytest.param(bind_arguments(set_live_clef, 1, "bass"), id="set_live_clef"),
         ],
     )
     async def test_tool_without_connection_raises_not_connected(
@@ -616,6 +640,36 @@ class TestManipulationValidation:
                 "start_measure must be >= 1.",
                 id="transpose-start-zero",
             ),
+            pytest.param(
+                bind_arguments(set_live_articulation, 4, 2, "staccato"),
+                "end_measure must be >= start_measure.",
+                id="articulation-empty-range",
+            ),
+            pytest.param(
+                bind_arguments(set_live_articulation, 1, 2, "staccato", beat=0),
+                "beat must be >= 1.",
+                id="articulation-beat-zero",
+            ),
+            pytest.param(
+                bind_arguments(set_live_notehead, 1, 1, "cross", beat=-1),
+                "beat must be >= 1.",
+                id="notehead-negative-beat",
+            ),
+            pytest.param(
+                bind_arguments(add_live_line, 0, 2, "slur"),
+                "start_measure must be >= 1.",
+                id="line-start-zero",
+            ),
+            pytest.param(
+                bind_arguments(add_live_text, 1, "  "),
+                "text must not be empty.",
+                id="text-blank",
+            ),
+            pytest.param(
+                bind_arguments(set_live_clef, 0, "alto"),
+                "measure must be >= 1.",
+                id="clef-measure-zero",
+            ),
         ],
     )
     async def test_tool_with_invalid_argument_raises_without_touching_score(
@@ -750,6 +804,61 @@ class TestManipulationHappyPaths:
                 [BridgeCall("undo", ())],
                 CursorPosition(measure=7, staff=0),
                 id="undo_last_action",
+            ),
+            pytest.param(
+                bind_arguments(
+                    set_live_articulation, 3, 4, "fermata", staff=1, beat=3, remove=True
+                ),
+                [BridgeCall("set_articulation", (3, 4, 1, "fermata", 3, True))],
+                ArticulationSet(
+                    articulation="fermata",
+                    removed=True,
+                    start_measure=3,
+                    end_measure=4,
+                    staff=1,
+                    beat=3,
+                    notes=2,
+                ),
+                id="set_live_articulation",
+            ),
+            pytest.param(
+                bind_arguments(set_live_notehead, 5, 8, "slash"),
+                [BridgeCall("set_notehead", (5, 8, 0, "slash", None))],
+                NoteheadSet(
+                    notehead="slash",
+                    start_measure=5,
+                    end_measure=8,
+                    staff=0,
+                    beat=None,
+                    notes=16,
+                ),
+                id="set_live_notehead",
+            ),
+            pytest.param(
+                bind_arguments(add_live_line, 2, 3, "diminuendo", staff=2),
+                [BridgeCall("add_line", (2, 3, 2, "diminuendo"))],
+                LineAdded(line="diminuendo", start_measure=2, end_measure=3, staff=2),
+                id="add_live_line",
+            ),
+            pytest.param(
+                bind_arguments(add_live_text, 6, "con sord.", staff=1),
+                [
+                    BridgeCall("go_to_measure", (6,)),
+                    BridgeCall("go_to_staff", (1,)),
+                    BridgeCall("add_text", ("con sord.", "technique")),
+                ],
+                TextAdded(text="con sord.", style="technique", measure=6, staff=1),
+                id="add_live_text",
+            ),
+            pytest.param(
+                bind_arguments(set_live_clef, 9, "treble_8vb", staff=3),
+                [
+                    BridgeCall("go_to_measure", (9,)),
+                    BridgeCall("go_to_staff", (3,)),
+                    BridgeCall("set_clef", ("treble_8vb",)),
+                ],
+                ClefSet(clef="treble_8vb", measure=9, staff=3),
+                id="set_live_clef",
             ),
         ],
     )

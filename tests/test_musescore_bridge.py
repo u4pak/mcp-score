@@ -464,6 +464,75 @@ class TestMuseScoreBridgeErrors:
             await bridge.go_to_measure(9)
 
 
+class TestMuseScoreBridgeNotationNotYetSupported:
+    """Articulations, noteheads, lines, text and clefs are Sibelius-only so far."""
+
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize(
+        ("operation", "refusal"),
+        [
+            pytest.param(
+                partial(
+                    MuseScoreBridge.set_articulation,
+                    start_measure=1,
+                    end_measure=2,
+                    staff=0,
+                    articulation="accent",
+                    beat=None,
+                    remove=False,
+                ),
+                "set articulations",
+                id="set_articulation",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.set_notehead,
+                    start_measure=1,
+                    end_measure=2,
+                    staff=0,
+                    notehead="cross",
+                    beat=None,
+                ),
+                "change noteheads",
+                id="set_notehead",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.add_line,
+                    start_measure=1,
+                    end_measure=2,
+                    staff=0,
+                    line="slur",
+                ),
+                "add lines",
+                id="add_line",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.add_text, text="pizz.", style="technique"),
+                "add staff text",
+                id="add_text",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.set_clef, clef="bass"),
+                "change clefs",
+                id="set_clef",
+            ),
+        ],
+    )
+    async def test_refuses_without_sending_anything(
+        self, operation: Callable[[MuseScoreBridge], Awaitable[object]], refusal: str
+    ) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge()
+
+        # Act / Assert
+        with pytest.raises(
+            BridgeError, match=f"^mcp-score cannot {refusal} in MuseScore yet.$"
+        ):
+            await operation(bridge)
+        assert sent_payloads(connection) == []
+
+
 class TestMuseScoreBridgePing:
     @pytest.mark.anyio()
     async def test_ping_with_pong_returns_true(self) -> None:

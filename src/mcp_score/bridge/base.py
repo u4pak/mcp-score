@@ -15,20 +15,30 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mcp_score.bridge.results import (
+        Articulation,
+        ArticulationSet,
         BarlineSet,
         ChordSymbolAdded,
+        Clef,
+        ClefSet,
         CursorInfo,
         CursorPosition,
         Duration,
         DynamicAdded,
         KeySignatureSet,
+        LineAdded,
+        LineType,
         MeasuresAppended,
         NoteAdded,
+        Notehead,
+        NoteheadSet,
         RehearsalMarkAdded,
         ScoreInfo,
         SelectedRange,
         SelectionProperties,
         TempoSet,
+        TextAdded,
+        TextStyle,
         TimeSignatureSet,
         Transposed,
     )
@@ -183,3 +193,53 @@ class ScoreBridge(ABC):
     @abstractmethod
     async def undo(self) -> CursorPosition:
         """Undo the last change; the cursor may move if the change removed measures."""
+
+    # ── Notation on existing notes, lines, text and clefs ───────────
+    #
+    # Not every bridge implements these yet, so each refuses by default.
+
+    async def set_articulation(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        articulation: Articulation,
+        beat: int | None,
+        remove: bool,
+    ) -> ArticulationSet:
+        """Add (or remove) an articulation on the notes of a passage.
+
+        *beat* (1-indexed, in the time signature's beat unit) limits the
+        change to the notes starting on that beat of each measure.
+        """
+        raise self._not_supported("set articulations")
+
+    async def set_notehead(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        notehead: Notehead,
+        beat: int | None,
+    ) -> NoteheadSet:
+        """Change the notehead of the notes of a passage; *beat* as above."""
+        raise self._not_supported("change noteheads")
+
+    async def add_line(
+        self, start_measure: int, end_measure: int, staff: int, line: LineType
+    ) -> LineAdded:
+        """Add a line from the start of one measure to the end of another."""
+        raise self._not_supported("add lines")
+
+    async def add_text(self, text: str, style: TextStyle) -> TextAdded:
+        """Add staff text at the current position."""
+        raise self._not_supported("add staff text")
+
+    async def set_clef(self, clef: Clef) -> ClefSet:
+        """Change the clef at the current position."""
+        raise self._not_supported("change clefs")
+
+    def _not_supported(self, operation: str) -> BridgeError:
+        return BridgeError(
+            f"mcp-score cannot {operation} in {self.application_name} yet."
+        )
