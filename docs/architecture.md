@@ -34,20 +34,20 @@ mcp-score does three things for an AI assistant:
           |         |   base.py (ScoreBridge) registry.py |
           |         |   websocket.py (transport)          |
           |         |   musescore.py   remote_control.py  |
-          |         |                  dorico.py          |
-          |         |                  sibelius.py        |
+          |         |   sibelius.py    dorico.py          |
           |         | musescore/headless.py  mscore CLI   |
           |         +--------+---------------+------------+
           v                  |               |
 +----------------+  WebSocket|               |WebSocket
 | score-generate |  ws://:8765               |ws://:4560 (Dorico)
-| Claude skill   |           |               |ws://:1898 (Sibelius)
-| writes music21 |  +--------v--------+  +---v---------------+
-| -> MusicXML    |  | MuseScore QML   |  | Dorico Remote     |
-+----------------+  | plugin          |  | Control/Sibelius  |
-                    | (plugin/)       |  | Connect (built-in,|
-                    +-----------------+  | experimental)     |
-                                         +-------------------+
+| Claude skill   |  (MuseScore)              |ws://:1898 (Sibelius)
+| writes music21 |  +--------v--------+  +---v-----------------+
+| -> MusicXML    |  | MuseScore QML   |  | Dorico Remote       |
++----------------+  | plugin          |  | Control; Sibelius   |
+                    | (plugin/)       |  | Connect + ManuScript|
+                    +-----------------+  | plug-in (both       |
+                                         | experimental)       |
+                                         +---------------------+
 ```
 
 The server registers the tool modules: connection, analysis, manipulation, generation and rendering. Generation and rendering work on files and need no live connection.
@@ -64,9 +64,9 @@ mcp-score supports multiple score notation applications through a common bridge 
 ScoreBridge (ABC)             -- the operations every tool needs
 └── WebSocketBridge           -- connection lifecycle over a WebSocketTransport, one reconnect
     ├── MuseScoreBridge       -- the MuseScore QML plugin's command/params protocol
+    ├── SibeliusBridge        -- Sibelius Connect: command IDs and the ManuScript plug-in
     └── RemoteControlBridge   -- Remote Control handshake/command protocol
-        ├── DoricoBridge      -- Dorico defaults (port 4560)
-        └── SibeliusBridge    -- Sibelius Connect defaults (port 1898)
+        └── DoricoBridge      -- Dorico defaults (port 4560)
 ```
 
 - `ScoreBridge` -- the abstract interface: connection, navigation, reading, and every edit the tools offer, each returning one of the result models in `bridge/results.py` and raising `BridgeError` when the application cannot do it
@@ -75,21 +75,21 @@ ScoreBridge (ABC)             -- the operations every tool needs
 - `MuseScoreBridge` -- frames commands for the MuseScore plugin and maps the interface to plugin commands
 - `RemoteControlBridge` -- Remote Control protocol logic, kept separate from application defaults: handshake with session tokens, command formatting, barline mapping, and limitation messages
 - `DoricoBridge` -- thin subclass providing Dorico-specific defaults
-- `SibeliusBridge` -- thin subclass providing Sibelius-specific defaults
+- `SibeliusBridge` -- Sibelius Connect's handshake and messages, with the cursor tracked on the Python side
 
 ### Bridge registry
 
 `bridge/registry.py` holds one bridge per application and tracks the active one. `BridgeRegistry.activate(bridge)` disconnects whichever bridge was active, then connects the new one, so a failed connection leaves nothing active; `deactivate(bridge)` disconnects it; `connected()` returns the active bridge only while it is connected. There is no module-level registry: `server.py` creates one per server and hands it to the tools as `AppState` through the SDK's context injection (`context.py`). `require_bridge(context)` in `tools/base.py` reads the connected bridge from it and raises `ToolError` when nothing is connected.
 
-### Remote Control protocol (Dorico, Sibelius)
+### Remote Control protocol (Dorico)
 
-Dorico 4+ implements a "Remote Control" WebSocket protocol, and Sibelius 2024.3+ serves the same handshake through Sibelius Connect. The protocol logic lives in `bridge/remote_control.py`, separate from the application defaults in `bridge/dorico.py` and `bridge/sibelius.py`.
+Dorico 4+ implements a "Remote Control" WebSocket protocol. The protocol logic lives in `bridge/remote_control.py`, separate from Dorico's defaults in `bridge/dorico.py`.
 
-Dorico and Sibelius support is experimental: both APIs are command-only (they cannot read note content), Dorico's is undocumented, and neither bridge has been verified against a running instance.
+Dorico support is experimental: it uses Dorico's undocumented Remote Control WebSocket API, is command-only (it cannot read note content), and has not been verified against a running Dorico instance.
 
 **Handshake protocol:**
 
-1. Client opens WebSocket to the application's port (Dorico: 4560, Sibelius: 1898)
+1. Client opens WebSocket to the application's port (Dorico: 4560)
 2. Client sends connect message with `clientName` and `handshakeVersion`
 3. Application shows a dialog asking the user to approve the connection
 4. Application responds with a session token
@@ -103,38 +103,46 @@ Session tokens can be cached and reused for reconnection (the application skips 
 - Default port 4560, configurable in Dorico preferences
 - No plugin needed -- Dorico IS the server
 
-**Sibelius-specific notes:**
+### Sibelius Connect (Sibelius)
 
-- Default port 1898, configurable in Sibelius preferences
-- Requires Sibelius Ultimate 2024.3 or later with Sibelius Connect enabled
-- No plugin needed -- Sibelius IS the server
-- Detailed score reading would need a ManuScript plugin; the WebSocket API is for commands
+Sibelius 2024.3+ serves Sibelius Connect, a WebSocket API on port 1898 enabled on the Input Devices page of Sibelius's preferences. Its protocol is documented in the [ManuScript Language Guide](https://resources.avid.com/SupportFiles/Sibelius/2026.6/ManuScript_Language_Guide.pdf) (chapter 6) and differs from Dorico's despite a similar `connect` message:
+
+1. Client sends `connect` with `clientName`, `handshakeVersion` and the `plugins` it will call
+2. Sibelius asks the user to allow the connection and answers `{"sessionToken": ...}`
+3. The token, sent with a later `connect` instead of the plug-in list, skips the question while Sibelius keeps running
+
+After the handshake there are two messages. `invokeCommands` runs Sibelius command IDs (the menu commands listed in chapter 5 of the guide) on the current selection; they take no parameters. `invokePlugin` calls a method of a ManuScript plug-in with arguments and returns its result as JSON.
+
+Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars and transposing. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
+
+Sibelius support is experimental: the bridge and plug-in follow the ManuScript Language Guide but have not been run against a real Sibelius.
 
 ## Capabilities and limitations
 
-The Remote Control WebSocket API of Dorico and Sibelius is fundamentally a **command execution and UI state observation** layer. It can trigger any action the application can perform (equivalent to pressing menu items or key commands) and read the UI state. But it cannot read musical content or perform operations that require text input through popovers.
+Dorico's Remote Control WebSocket API is fundamentally a **command execution and UI state observation** layer. It can trigger any action the application can perform (equivalent to pressing menu items or key commands) and read the UI state. But it cannot read musical content or perform operations that require text input through popovers.
 
 ### What the WebSocket API can do
 
-| Capability                                                     |         MuseScore          | Dorico / Sibelius (experimental) |
-| -------------------------------------------------------------- | :------------------------: | :------------------------------: |
-| Execute commands (undo, navigation, barlines, rehearsal marks) |            Yes             |               Yes                |
-| Get application status                                         |            Yes             |               Yes                |
-| Get selection properties                                       |            Yes             |               Yes                |
-| Set barlines                                                   |            Yes             |               Yes                |
-| Add rehearsal marks                                            |   Yes (with custom text)   |     Yes (auto-numbered only)     |
-| Navigate to measure                                            |            Yes             |               Yes                |
-| Read the element at the cursor                                 |    Yes (via QML plugin)    |                No                |
-| Read cursor position                                           | Yes (measure, beat, staff) |     Limited (UI state only)      |
+| Capability                                                     |         MuseScore          |  Dorico (experimental)   |      Sibelius (experimental)      |
+| -------------------------------------------------------------- | :------------------------: | :----------------------: | :-------------------------------: |
+| Execute commands (undo, navigation, barlines, rehearsal marks) |            Yes             |           Yes            |                Yes                |
+| Get application status                                         |            Yes             |           Yes            |       Responsiveness (ping)       |
+| Get selection properties                                       |            Yes             |           Yes            |    Yes (cursor, as MuseScore)     |
+| Set barlines                                                   |            Yes             |           Yes            | Yes (not dotted, endStartRepeat)  |
+| Add rehearsal marks                                            |   Yes (with custom text)   | Yes (auto-numbered only) | Yes (letters or numbers as given) |
+| Navigate to measure and staff                                  |            Yes             |       Measure only       |   Yes (via ManuScript plug-in)    |
+| Notes, chord symbols, dynamics, key/time signatures, tempo     |            Yes             |            No            |   Yes (via ManuScript plug-in)    |
+| Read the element at the cursor                                 |    Yes (via QML plugin)    |            No            |   Yes (via ManuScript plug-in)    |
+| Read cursor position                                           | Yes (measure, beat, staff) | Limited (UI state only)  |    Yes (measure, beat, staff)     |
 
-### What the Remote Control API cannot do
+### What Dorico's API cannot do
 
-These are constraints of the Remote Control API of Dorico and Sibelius, not of mcp-score:
+These are constraints of Dorico's Remote Control API, not of mcp-score:
 
 - **Chord symbols, key signatures, time signatures, tempo marks, notes, dynamics** are entered through popovers, which the API cannot type into.
 - **Score content** is not readable; the API reports UI state and selection properties.
 - **Staff navigation and range selection** do not exist; the API acts on the current selection.
-- **MusicXML export** is not exposed by any of the applications' WebSocket APIs; `render_score` covers files on disk.
+- **MusicXML export** is not exposed by either application's WebSocket API; `render_score` covers files on disk.
 
 ## Why a skill and tools for generation, MCP for manipulation?
 
@@ -151,8 +159,8 @@ Each module's docstring says what it is responsible for; the tools themselves ar
 ```
 src/mcp_score/
   __init__.py           Package root
-  cli.py                CLI entry point (serve, run, install, install-skill, install-plugin)
-  resources.py          Locate bundled files (skill directory, plugin directory)
+  cli.py                CLI entry point (serve, run, install, install-skill, install-plugin, install-sibelius-plugin)
+  resources.py          Locate bundled files (skill directory, plugin directories)
   server.py             create_server() builds the MCPServer and registers every tool module
   context.py            AppState and ScoreContext: what the server hands every tool
   guide.py              The score-generate skill assembled into one document for MCP clients
@@ -170,7 +178,7 @@ src/mcp_score/
     remote_control.py   RemoteControlBridge -- Remote Control protocol layer
     musescore.py        MuseScoreBridge -- MuseScore plugin protocol
     dorico.py           DoricoBridge -- thin subclass (Dorico defaults, experimental)
-    sibelius.py         SibeliusBridge -- thin subclass (Sibelius defaults, experimental)
+    sibelius.py         SibeliusBridge -- Sibelius Connect protocol and plug-in calls (experimental)
     registry.py         BridgeRegistry -- the bridges and which one is active
   musescore/
     paths.py            Where MuseScore keeps user files (plugins directory)
@@ -178,6 +186,9 @@ src/mcp_score/
     headless.py         Headless rendering through the MuseScore command line
     plugin/             MuseScore plugin: mcp-score-bridge.qml (server, dispatch) and its JS modules
                         (constants, score, reading, editing, selection, sequence)
+  sibelius/
+    paths.py            Where Sibelius keeps user plug-ins (per platform)
+    plugin/             McpScoreBridge.plg: the ManuScript plug-in Sibelius Connect calls
 
 .claude/skills/
   score-generate/       Claude Code skill for score generation
@@ -212,7 +223,8 @@ Every supported application uses WebSocket for communication, but the protocols 
 
 - **MuseScore**: QML plugin runs inside MuseScore Studio 4.4.2+ and opens a WebSocket server on port 8765 with MuseScore's built-in `api.websocketserver` (4.4 dropped the `QtWebSockets` QML module; 4.4.2 added the replacement, so older versions are not supported). JSON messages with `command` and `params` fields. Custom protocol -- implemented directly in `MuseScoreBridge`.
 - **Dorico** (experimental): Uses Dorico's "Remote Control" protocol with `message`/`commandName` fields and session token handshake. Protocol logic lives in `RemoteControlBridge`; the thin `DoricoBridge` subclass provides Dorico's defaults (port, name).
-- **Sibelius** (experimental): Sibelius Connect (Sibelius Ultimate 2024.3+) speaks the same Remote Control protocol. The thin `SibeliusBridge` subclass provides Sibelius's defaults (port 1898, name).
+
+- **Sibelius** (experimental): Sibelius Connect (Sibelius 2024.3+) runs command IDs and calls the bundled ManuScript plug-in. `SibeliusBridge` implements the handshake and both messages directly on `WebSocketBridge`, since the protocol is not Dorico's.
 
 LilyPond is out of scope for now.
 

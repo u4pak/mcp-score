@@ -105,7 +105,13 @@ Dorico support is experimental: it uses Dorico's undocumented Remote Control Web
 
 ## Live Sibelius manipulation (experimental)
 
-Sibelius support is experimental: Sibelius Connect speaks the same command-only Remote Control protocol as Dorico (it cannot read note content), and it has not been verified against a running Sibelius instance. It requires Sibelius Ultimate 2024.3 or later. To try it, enable Sibelius Connect in Sibelius's preferences and ask Claude to "Connect to Sibelius."
+Sibelius support is experimental: it follows Avid's ManuScript Language Guide but has not been run against a real Sibelius. It needs Sibelius 2024.3 or later and a ManuScript plug-in that Sibelius Connect calls:
+
+```bash
+mcp-score install-sibelius-plugin
+```
+
+This copies `McpScoreBridge.plg` into Sibelius's per-user plug-ins folder (`%APPDATA%\Avid\Sibelius\Plugins` on Windows, `~/Library/Application Support/Avid/Sibelius/Plugins` on macOS). Restart Sibelius, enable Sibelius Connect on the Input Devices page of its preferences, open a score and ask Claude to "Connect to Sibelius." Sibelius asks you to allow the connection the first time.
 
 ## Next steps
 

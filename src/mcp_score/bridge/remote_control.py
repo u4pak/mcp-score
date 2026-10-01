@@ -1,7 +1,6 @@
 """Bridge to applications that speak the Remote Control WebSocket protocol.
 
-Dorico 4 and later, and Sibelius 2024.3 and later through Sibelius
-Connect, serve this protocol. It is a command-execution and
+Dorico 4 and later serve this protocol. It is a command-execution and
 UI-state layer: the client can trigger any menu action and read the
 application status, but cannot read notes or type into popovers. Bridges
 built on it answer such requests with an explanatory error instead.
@@ -91,7 +90,11 @@ READING_REASON = "the API triggers commands and cannot read the score"
 
 
 class HandshakeError(TransportError):
-    """The Remote Control handshake did not complete."""
+    """The connection handshake did not complete.
+
+    Sibelius Connect opens with the same ``connect`` message, so its
+    bridge raises this too.
+    """
 
 
 class RemoteControlBridge(WebSocketBridge):

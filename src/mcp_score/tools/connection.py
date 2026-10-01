@@ -30,7 +30,8 @@ MUSESCORE_CONNECT_HINT = (
 )
 DORICO_CONNECT_HINT = "Is Dorico running with Remote Control enabled?"
 SIBELIUS_CONNECT_HINT = (
-    "Is Sibelius Ultimate 2024.3 or later running with Sibelius Connect enabled?"
+    "Is Sibelius 2024.3 or later running with Sibelius Connect enabled, and "
+    "was the connection allowed in Sibelius?"
 )
 
 
@@ -124,12 +125,12 @@ async def connect_to_sibelius(
 ) -> Connected:
     """Connect to a running Sibelius via Sibelius Connect (experimental).
 
-    Sibelius support is experimental: Sibelius Connect speaks the same
-    command-only Remote Control protocol as Dorico (it cannot read note
-    content), and this bridge has not been verified against a running
-    Sibelius. Sibelius Ultimate 2024.3 and later serve the API without a
-    plugin; the port is set in Sibelius's preferences. Connecting
-    disconnects any other application.
+    Sibelius support is experimental: it has not been verified against a
+    running Sibelius. Sibelius 2024.3 and later serve Sibelius Connect
+    (enabled, and its port set, on the Input Devices page of Sibelius's
+    preferences). The MCP Score Bridge plug-in (`mcp-score install-sibelius-plugin`)
+    must be installed. Sibelius asks the user to allow the first
+    connection. Connecting disconnects any other application.
 
     Args:
         host: WebSocket host (default: localhost).
@@ -148,11 +149,10 @@ async def disconnect_from_sibelius(context: ScoreContext) -> Disconnected:
 
 @score_tool
 async def get_live_score_info(context: ScoreContext) -> ScoreInfo:
-    """Get information about the score open in MuseScore.
+    """Get information about the score open in MuseScore or Sibelius.
 
     Title, parts, measure count and the opening key and time signatures.
-    Not available with Dorico or Sibelius, whose API cannot describe the
-    score.
+    Not available with Dorico, whose API cannot describe the score.
     """
     return await require_bridge(context).get_score()
 

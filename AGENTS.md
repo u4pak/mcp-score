@@ -12,7 +12,7 @@ Follow the code standards in [CONVENTIONS.md](CONVENTIONS.md).
 
 ```
 src/mcp_score/
-  cli.py              CLI entry point (serve, run, install, install-skill, install-plugin)
+  cli.py              CLI entry point (serve, run, install, install-skill, install-plugin, install-sibelius-plugin)
   server.py           MCP server entry point: create_server() registers every tool module
   context.py          AppState and ScoreContext: what the server hands every tool
   guide.py            The score-generate skill assembled into one document for MCP clients
@@ -28,16 +28,19 @@ src/mcp_score/
     base.py           ScoreBridge abstract interface and BridgeError
     results.py        The result models every operation returns (published as tool output schemas)
     websocket.py      WebSocketTransport and WebSocketBridge (connection lifecycle, reconnect)
-    remote_control.py Remote Control protocol layer (used by Dorico and Sibelius)
+    remote_control.py Remote Control protocol layer (used by Dorico)
     musescore.py      MuseScore plugin protocol on WebSocketBridge
     dorico.py         Dorico defaults (thin subclass of RemoteControlBridge, experimental)
-    sibelius.py       Sibelius Connect defaults (thin subclass of RemoteControlBridge, experimental)
+    sibelius.py       Sibelius Connect protocol and plug-in calls on WebSocketBridge (experimental)
     registry.py       BridgeRegistry: the bridges and which one is active
   musescore/
     paths.py          Where MuseScore keeps user files (plugins directory)
     executable.py     Where MuseScore's executable is (env var, PATH, platform defaults)
     headless.py       Headless rendering through the MuseScore command line
     plugin/           MuseScore plugin: mcp-score-bridge.qml (server, dispatch) and its JS modules
+  sibelius/
+    paths.py          Where Sibelius keeps user plug-ins
+    plugin/           McpScoreBridge.plg: ManuScript plug-in called through Sibelius Connect
 
 .claude/skills/
   score-generate/     Claude Code skill for score generation via music21
@@ -91,7 +94,7 @@ Integration tests against a real MuseScore are opt-in; see [CONTRIBUTING.md](CON
 ## Repo-specific conventions
 
 - **Conventional commits** — enforced by `.githooks/commit-msg`
-- **Thin subclasses over monolithic duplicated implementations** — protocol logic lives in `RemoteControlBridge`; app-specific bridges (Dorico, Sibelius) only override defaults
+- **Thin subclasses over monolithic duplicated implementations** — protocol logic lives in `RemoteControlBridge`; app-specific bridges (Dorico) only override defaults
 - **Test non-triviality** — no issubclass checks, json.dumps wrappers, or constant assertions. Every test must cover a meaningful code path
 - **Test deduplication** — shared protocol logic is tested once in the base class test file, not repeated per subclass. Per-subclass tests cover only subclass-specific behavior (defaults, overrides)
 - **No counts in docs that drift** — no tool, command or test counts in documentation. List things by name or describe them; numbers go stale silently
@@ -112,7 +115,7 @@ In Claude Code, generation is handled by the `score-generate` skill — Claude w
 
 The rationale lives in [docs/architecture.md](docs/architecture.md#key-design-decisions) and the decision ledger in [issue #91](https://github.com/tskovlund/mcp-score/issues/91). The constraints to keep in mind while coding:
 
-- **MuseScore Studio 4.4.2+ only** for the live plugin; older versions lack the plugin WebSocket API. Dorico and Sibelius (via Sibelius Connect) are experimental.
+- **MuseScore Studio 4.4.2+ only** for the live plugin; older versions lack the plugin WebSocket API. Dorico and Sibelius are experimental. Sibelius goes through Sibelius Connect and the bundled ManuScript plug-in, which keeps no state and must never open a dialog.
 - **MusicXML** is the interchange format; never generate `.mscz`/`.mscx`.
 - **PyPI name `mcp-score-server`**; the import package `mcp_score` and the CLI `mcp-score` keep their names.
 - **Integration tests run against real MuseScore** in CI on all three platforms; the versions live in `tests/integration/musescore-versions.json`.

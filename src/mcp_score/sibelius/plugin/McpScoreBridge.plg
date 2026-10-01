@@ -1,0 +1,347 @@
+
+{
+	Initialize "() {
+// mcp-score calls the methods below through Sibelius Connect's invokePlugin
+// message. Each takes explicit bar (1-indexed) and staff (0-indexed)
+// numbers, keeps no state of its own and returns a Dictionary, which
+// Sibelius Connect sends back as a JSON object. A method that cannot do
+// what was asked returns a Dictionary with an error entry instead of
+// showing a dialog, since nobody is at Sibelius to dismiss one.
+if (Sibelius.ProgramVersion > 20200600)
+{
+	SetInterpreterOption(TreatSingleCharacterAsString);
+}
+AddToPluginsMenu(_PluginMenuName, 'Run');}"
+	Run "() {
+Sibelius.MessageBox(_msgRunByHand);}"
+	_PluginMenuName "MCP Score Bridge"
+	_msgRunByHand "mcp-score uses this plug-in through Sibelius Connect. There is nothing to run by hand."
+	_msgNoScore "No score is open in Sibelius."
+	Failure "(message) {
+return CreateDictionary('error', message);}"
+	CheckBar "(score, bar) {
+// The reason bar (1-indexed) does not exist, or the empty string.
+barCount = score.SystemStaff.BarCount;
+if ((bar < 1) or (bar > barCount))
+{
+	return 'Measure ' & bar & ' out of range (1-' & barCount & ')';
+}
+return '';}"
+	CheckStaff "(score, staff) {
+// The reason staff (0-indexed) does not exist, or the empty string.
+if ((staff < 0) or (staff >= score.StaffCount))
+{
+	return 'Staff ' & staff & ' out of range (0-' & (score.StaffCount - 1) & ')';
+}
+return '';}"
+	CheckPosition "(score, bar, staff) {
+problem = CheckBar(score, bar);
+if (problem = '')
+{
+	problem = CheckStaff(score, staff);
+}
+return problem;}"
+	StaffBar "(score, bar, staff) {
+return score.NthStaff(staff + 1).NthBar(bar);}"
+	Ping "() {
+return 'pong';}"
+	GetScore "() {
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+parts = CreateSparseArray();
+staffNum = 1;
+while (staffNum <= score.StaffCount)
+{
+	staff = score.NthStaff(staffNum);
+	staveCount = staff.NumStavesInSameInstrument;
+	if (staveCount < 1)
+	{
+		staveCount = 1;
+	}
+	lastStaffNum = staffNum + staveCount - 1;
+	if (lastStaffNum > score.StaffCount)
+	{
+		lastStaffNum = score.StaffCount;
+	}
+	name = staff.FullInstrumentName;
+	if (name = '')
+	{
+		name = staff.InstrumentName;
+	}
+	parts.Push(CreateDictionary('name', name, 'start_staff', staffNum - 1, 'end_staff', lastStaffNum - 1));
+	staffNum = lastStaffNum + 1;
+}
+systemStaff = score.SystemStaff;
+keySignature = systemStaff.CurrentKeySignature(1);
+timeSignature = systemStaff.CurrentTimeSignature(1);
+return CreateDictionary(
+	'title', score.Title,
+	'part_count', parts.Length,
+	'parts', parts,
+	'measure_count', systemStaff.BarCount,
+	'key_signature', keySignature.Sharps,
+	'time_signature', CreateDictionary('numerator', timeSignature.Numerator, 'denominator', timeSignature.Denominator));}"
+	GoTo "(bar, staff) {
+// Select one bar of one staff, so the user sees where mcp-score is and
+// Sibelius commands such as barlines act there.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+score.Selection.SelectPassage(bar, bar, staff + 1, staff + 1);
+Sibelius.MoveActiveViewToBar(bar);
+return CreateDictionary('measure', bar, 'staff', staff);}"
+	SelectRange "(startBar, endBar, topStaff, bottomStaff) {
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, startBar, topStaff);
+if (problem = '')
+{
+	problem = CheckPosition(score, endBar, bottomStaff);
+}
+if (problem != '')
+{
+	return Failure(problem);
+}
+score.Selection.SelectPassage(startBar, endBar, topStaff + 1, bottomStaff + 1);
+return CreateDictionary('start_measure', startBar, 'end_measure', endBar, 'start_staff', topStaff, 'end_staff', bottomStaff);}"
+	GetCursorInfo "(bar, staff, position) {
+// The voice 1 note, chord or rest sounding at position (1/256ths of a
+// quarter note from the start of the bar), with the time signature's
+// denominator so the caller can work out the beat.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+found = null;
+for each NoteRest noteRest in StaffBar(score, bar, staff)
+{
+	if (noteRest.VoiceNumber = 1)
+	{
+		if ((noteRest.Position <= position) and (position < (noteRest.Position + noteRest.Duration)))
+		{
+			found = noteRest;
+		}
+	}
+}
+timeSignature = score.SystemStaff.CurrentTimeSignature(bar);
+info = CreateDictionary('measure', bar, 'staff', staff, 'position', position, 'time_signature_denominator', timeSignature.Denominator);
+if (found != null)
+{
+	notes = CreateSparseArray();
+	for each note in found
+	{
+		notes.Push(CreateDictionary('pitch', note.Pitch, 'diatonic_pitch', note.DiatonicPitch, 'name', note.Name));
+	}
+	info['element'] = CreateDictionary('type', found.Type, 'position', found.Position, 'duration', found.Duration, 'notes', notes);
+}
+return info;}"
+	AddNote "(bar, staff, position, pitch, duration) {
+// Add a note of duration (1/256ths of a quarter note) at position and
+// report where the next note would go.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+barObject = StaffBar(score, bar, staff);
+if ((position + duration) > barObject.Length)
+{
+	return Failure('The note does not fit in what is left of measure ' & bar & '.');
+}
+note = barObject.AddNote(position, pitch, duration);
+if (note = null)
+{
+	return Failure('Sibelius could not add the note to measure ' & bar & '.');
+}
+nextBar = bar;
+nextPosition = position + duration;
+if (nextPosition >= barObject.Length)
+{
+	nextBar = bar + 1;
+	nextPosition = 0;
+}
+return CreateDictionary('measure', nextBar, 'staff', staff, 'position', nextPosition);}"
+	AddRehearsalMark "(bar, mark) {
+// An empty mark continues Sibelius's own numbering.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckBar(score, bar);
+if (problem != '')
+{
+	return Failure(problem);
+}
+systemBar = score.SystemStaff.NthBar(bar);
+if (mark = '')
+{
+	systemBar.AddRehearsalMark();
+}
+else
+{
+	systemBar.AddRehearsalMark(False, mark);
+}
+text = '';
+for each RehearsalMark rehearsalMark in systemBar
+{
+	text = rehearsalMark.MarkAsText;
+}
+return CreateDictionary('text', text, 'measure', bar);}"
+	AddChordSymbol "(bar, staff, position, text) {
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+chordSymbol = StaffBar(score, bar, staff).AddGuitarFrame(position, text);
+if (chordSymbol = null)
+{
+	return Failure('Sibelius did not recognise the chord symbol ' & text & '.');
+}
+return CreateDictionary('text', text, 'measure', bar);}"
+	AddDynamic "(bar, staff, position, dynamic) {
+// Expression text in the Music text character style, as Sibelius writes
+// dynamics typed with Ctrl/Cmd held down.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+text = StaffBar(score, bar, staff).AddText(position, '\\ctext.character.musictext\\' & dynamic, 'text.staff.expression');
+if (text = null)
+{
+	return Failure('Sibelius could not add the dynamic ' & dynamic & '.');
+}
+return CreateDictionary('dynamic', dynamic, 'measure', bar);}"
+	SetKeySignature "(bar, staff, fifths) {
+// A major key for every staff, without the double barline Sibelius adds
+// by default.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+keySignature = StaffBar(score, bar, staff).AddKeySignature(0, fifths, True, False);
+if (keySignature = null)
+{
+	return Failure('Sibelius could not add the key signature.');
+}
+return CreateDictionary('fifths', fifths, 'measure', bar);}"
+	SetTimeSignature "(bar, staff, numerator, denominator) {
+// Rewrites the following bars, as Sibelius does by default.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+problem = StaffBar(score, bar, staff).AddTimeSignature(numerator, denominator, True, True);
+if (problem != '')
+{
+	return Failure(problem);
+}
+return CreateDictionary('numerator', numerator, 'denominator', denominator, 'measure', bar);}"
+	SetTempo "(bar, bpm, text) {
+// Tempo text followed by a metronome mark (q is a quarter note in the
+// Music text character style), which Sibelius plays back.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckBar(score, bar);
+if (problem != '')
+{
+	return Failure(problem);
+}
+marking = '\\ctext.character.musictext\\q\\f_\\ = ' & bpm;
+if (text != '')
+{
+	marking = text & ' ' & marking;
+}
+tempo = score.SystemStaff.NthBar(bar).AddText(0, marking, 'text.system.tempo');
+if (tempo = null)
+{
+	return Failure('Sibelius could not add the tempo marking.');
+}
+return CreateDictionary('bpm', bpm, 'measure', bar);}"
+	AppendBars "(count) {
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+score.AddBars(count);
+return CreateDictionary('count', count, 'total_measures', score.SystemStaff.BarCount);}"
+	Transpose "(startBar, endBar, topStaff, bottomStaff, degree, intervalType) {
+// Select the passage and transpose it by a 0-based degree (negative is
+// down) and interval type, without double accidentals and leaving key
+// signatures as they are.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, startBar, topStaff);
+if (problem = '')
+{
+	problem = CheckPosition(score, endBar, bottomStaff);
+}
+if (problem != '')
+{
+	return Failure(problem);
+}
+selection = score.Selection;
+selection.SelectPassage(startBar, endBar, topStaff + 1, bottomStaff + 1);
+notes = 0;
+for each NoteRest noteRest in selection
+{
+	notes = notes + noteRest.NoteCount;
+}
+selection.Transpose(degree, intervalType, False, False);
+return CreateDictionary('notes', notes);}"
+}

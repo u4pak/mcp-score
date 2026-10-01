@@ -107,8 +107,8 @@ class Note(Result):
 class Element(Result):
     """What sits at the cursor: a chord, a rest, a single note or something else."""
 
-    type: int
-    """The application's element type code."""
+    type: int | str
+    """The application's element type: MuseScore's code, Sibelius's type name."""
     notes: list[Note] | None = None
     """The notes of a chord."""
     duration: Duration | None = None
@@ -136,8 +136,8 @@ class CursorInfo(CursorPosition):
 class SelectionProperties(Result):
     """What the application reports about the current selection.
 
-    MuseScore reports the cursor position; Dorico and Sibelius report the
-    properties of the selected items as they come from their API.
+    MuseScore and Sibelius report the cursor position; Dorico reports the
+    properties of the selected items as they come from its API.
     """
 
     cursor: CursorInfo | None = None

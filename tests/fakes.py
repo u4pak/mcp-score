@@ -44,10 +44,13 @@ from mcp_score.context import AppState, ScoreContext
 __all__ = [
     "REMOTE_CONTROL_HANDSHAKE",
     "SESSION_TOKEN",
+    "SIBELIUS_COMMANDS_RUN",
+    "SIBELIUS_HANDSHAKE",
     "WEBSOCKETS_CONNECT",
     "BridgeCall",
     "FakeBridge",
     "fake_connection",
+    "plugin_reply",
     "score_context",
     "sent_payloads",
 ]
@@ -314,3 +317,17 @@ REMOTE_CONTROL_HANDSHAKE: tuple[dict[str, Any], ...] = (
     {"message": "response", "code": "kConnected"},
 )
 """What a Remote Control server replies during a fresh handshake, in order."""
+
+SIBELIUS_HANDSHAKE: tuple[dict[str, Any], ...] = ({"sessionToken": SESSION_TOKEN},)
+"""What Sibelius Connect replies to ``connect`` once the user allows it."""
+
+SIBELIUS_COMMANDS_RUN: dict[str, Any] = {
+    "message": "invokeCommandsResponse",
+    "result": True,
+}
+"""Sibelius Connect's reply to ``invokeCommands``."""
+
+
+def plugin_reply(value: Any) -> dict[str, Any]:
+    """Sibelius Connect's reply to ``invokePlugin`` for a method returning *value*."""
+    return {"message": "invokePluginResponse", "result": True, "return_value": value}

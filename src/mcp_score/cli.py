@@ -2,8 +2,8 @@
 
 ``mcp-score`` with no command runs the MCP server. The other commands
 install the extras (the score-generate skill for Claude Code and the
-MuseScore bridge plugin) and run music21 scripts with the package's own
-interpreter.
+MuseScore and Sibelius bridge plugins) and run music21 scripts with the
+package's own interpreter.
 """
 
 from __future__ import annotations
@@ -19,9 +19,22 @@ from mcp_score.musescore.paths import (
     PLUGIN_QML_NAME,
     plugins_directory,
 )
-from mcp_score.resources import PLUGIN_DIRECTORY, SKILL_DIRECTORY, package_path
+from mcp_score.resources import (
+    PLUGIN_DIRECTORY,
+    SIBELIUS_PLUGIN_DIRECTORY,
+    SKILL_DIRECTORY,
+    package_path,
+)
+from mcp_score.sibelius import paths as sibelius_paths
 
-__all__ = ["build_parser", "install_plugin", "install_skill", "main", "run_script"]
+__all__ = [
+    "build_parser",
+    "install_plugin",
+    "install_sibelius_plugin",
+    "install_skill",
+    "main",
+    "run_script",
+]
 
 SKILL_DESTINATION = Path.home() / ".claude" / "skills" / "score-generate"
 """Where Claude Code looks for user skills."""
@@ -66,6 +79,21 @@ def install_plugin(directory: Path | None = None) -> Path:
     return _replace_tree(source, plugins / PLUGIN_DIRECTORY_NAME)
 
 
+def install_sibelius_plugin(directory: Path | None = None) -> Path:
+    """Copy the bridge plug-in into Sibelius's plug-ins *directory*, replacing it.
+
+    Raises:
+        FileNotFoundError: When the plug-in file is not bundled.
+    """
+    source = package_path(
+        str(SIBELIUS_PLUGIN_DIRECTORY / sibelius_paths.PLUGIN_FILE_NAME)
+    )
+    plugins = directory or sibelius_paths.plugins_directory()
+    category = plugins / sibelius_paths.PLUGIN_CATEGORY
+    category.mkdir(parents=True, exist_ok=True)
+    return Path(shutil.copyfile(source, category / sibelius_paths.PLUGIN_FILE_NAME))
+
+
 def run_script(script: str, arguments: list[str]) -> int:
     """Run a Python script with this interpreter, which has music21."""
     return subprocess.run([sys.executable, script, *arguments], check=False).returncode  # noqa: S603
@@ -105,6 +133,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "install-plugin", help="install the bridge plugin into MuseScore"
     )
+    commands.add_parser(
+        "install-sibelius-plugin", help="install the bridge plug-in into Sibelius"
+    )
     return parser
 
 
@@ -118,13 +149,21 @@ def _report_plugin(destination: Path) -> None:
     print("Requires MuseScore Studio 4.4.2 or later.")  # noqa: T201
 
 
-def _install(skill: bool, plugin: bool) -> int:
+def _report_sibelius_plugin(destination: Path) -> None:
+    print(f"Installed the Sibelius plug-in to {destination}")  # noqa: T201
+    print("Restart Sibelius, then enable Sibelius Connect on the Input Devices")  # noqa: T201
+    print("page of its preferences. Requires Sibelius 2024.3 or later.")  # noqa: T201
+
+
+def _install(skill: bool, plugin: bool, sibelius_plugin: bool = False) -> int:
     """Run the requested installs, reporting each; missing files fail the command."""
     try:
         if skill:
             _report_skill(install_skill())
         if plugin:
             _report_plugin(install_plugin())
+        if sibelius_plugin:
+            _report_sibelius_plugin(install_sibelius_plugin())
     except FileNotFoundError as error:
         sys.stderr.write(f"Error: {error}\n")
         return EXIT_FAILURE
@@ -142,4 +181,5 @@ def main(argv: list[str] | None = None) -> int:
     return _install(
         skill=command in ("install", "install-skill"),
         plugin=command in ("install", "install-plugin"),
+        sibelius_plugin=command == "install-sibelius-plugin",
     )

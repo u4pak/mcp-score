@@ -83,12 +83,12 @@ No parameters.
 
 Connect to a running Sibelius via Sibelius Connect (experimental).
 
-Sibelius support is experimental: Sibelius Connect speaks the same
-command-only Remote Control protocol as Dorico (it cannot read note
-content), and this bridge has not been verified against a running
-Sibelius. Sibelius Ultimate 2024.3 and later serve the API without a
-plugin; the port is set in Sibelius's preferences. Connecting
-disconnects any other application.
+Sibelius support is experimental: it has not been verified against a
+running Sibelius. Sibelius 2024.3 and later serve Sibelius Connect
+(enabled, and its port set, on the Input Devices page of Sibelius's
+preferences). The MCP Score Bridge plug-in (`mcp-score install-sibelius-plugin`)
+must be installed. Sibelius asks the user to allow the first
+connection. Connecting disconnects any other application.
 
 | Parameter | Type  | Default       | Description                                                 |
 | --------- | ----- | ------------- | ----------------------------------------------------------- |
@@ -116,11 +116,10 @@ No parameters.
 
 ### `get_live_score_info`
 
-Get information about the score open in MuseScore.
+Get information about the score open in MuseScore or Sibelius.
 
 Title, parts, measure count and the opening key and time signatures.
-Not available with Dorico or Sibelius, whose API cannot describe the
-score.
+Not available with Dorico, whose API cannot describe the score.
 
 No parameters.
 
@@ -151,11 +150,11 @@ No parameters.
 
 Analysis tools: read from the connected application.
 
-MuseScore reports what sits under its cursor; the tools move the cursor
-measure by measure, so a passage comes back as one entry per measure with
-the element at the start of that measure. The Remote Control API of
-Dorico and Sibelius has no cursor: the only thing it can read is the
-selection's properties.
+MuseScore and Sibelius report what sits under the cursor; the tools move
+the cursor measure by measure, so a passage comes back as one entry per
+measure with the element at the start of that measure. Dorico's Remote
+Control API has no cursor: the only thing it can read is the selection's
+properties.
 
 ### `read_passage`
 
@@ -164,8 +163,9 @@ Read a range of measures in the live score, one entry per measure.
 For each measure MuseScore reports the cursor position (measure, staff,
 voice, beat, tick) and the element at the start of the measure on that
 staff: its type, and for a note or chord its pitches and duration. It
-does not list every element in the measure. Not available with Dorico
-or Sibelius, which cannot read score content.
+does not list every element in the measure. Sibelius reports the same
+for the note, chord or rest in voice 1. Not available with Dorico,
+which cannot read score content.
 
 | Parameter       | Type          | Default    | Description                                                |
 | --------------- | ------------- | ---------- | ---------------------------------------------------------- |
@@ -185,12 +185,12 @@ or Sibelius, which cannot read score content.
 
 ### `get_measure_content`
 
-Select one measure of one staff in MuseScore and report the selection.
+Select one measure of one staff and report the selection.
 
 The selection becomes visible in the score, ready for a manual edit;
 the result names the selected measure and staff, not its content (use
-read_passage for that). Not available with Dorico or Sibelius, which
-cannot move to a staff or select a measure.
+read_passage for that). Not available with Dorico, which cannot move
+to a staff or select a measure.
 
 | Parameter | Type  | Default    | Description                          |
 | --------- | ----- | ---------- | ------------------------------------ |
@@ -209,17 +209,17 @@ cannot move to a staff or select a measure.
 
 Get properties of the current selection in the connected application.
 
-MuseScore reports the cursor position (measure, beat, staff, element).
-Dorico and Sibelius report the names, types and values of every
-property of the selected items, which is the closest their API gets to
+MuseScore and Sibelius report the cursor position (measure, beat,
+staff, element). Dorico reports the names, types and values of every
+property of the selected items, which is the closest its API gets to
 reading the score.
 
 No parameters.
 
 **Returns** `SelectionProperties`: What the application reports about the current selection.
 
-MuseScore reports the cursor position; Dorico and Sibelius report the
-properties of the selected items as they come from their API.
+MuseScore and Sibelius report the cursor position; Dorico reports the
+properties of the selected items as they come from its API.
 
 | Field        | Type                       | Description |
 | ------------ | -------------------------- | ----------- |
@@ -234,9 +234,9 @@ Manipulation tools: change the score in the connected application.
 Every tool that takes a measure moves there first and refuses to continue
 if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
-the Remote Control API of Dorico and Sibelius triggers commands but cannot
-type into popovers or move the selection, so most of these tools work with
-MuseScore only.
+Dorico's Remote Control API triggers commands but cannot type into
+popovers or move the selection, so most of these tools work with
+MuseScore and Sibelius only.
 
 ### `add_live_note`
 
@@ -244,7 +244,7 @@ Add a note at the start of a measure in the live score.
 
 Consecutive calls on the same measure append notes one after another,
 since the application advances its cursor after each note. Not
-available with Dorico or Sibelius.
+available with Dorico.
 
 | Parameter     | Type  | Default    | Description                                                        |
 | ------------- | ----- | ---------- | ------------------------------------------------------------------ |
@@ -267,8 +267,10 @@ available with Dorico or Sibelius.
 
 Add a rehearsal mark to a measure in the live score.
 
-Dorico and Sibelius number rehearsal marks themselves and ignore the
-text (the result says so in a warning).
+Dorico numbers rehearsal marks itself and ignores the text; Sibelius
+writes one or two letters or a number as given and numbers anything
+else itself. The result says so in a warning when the text was not
+kept.
 
 | Parameter | Type  | Default    | Description                                   |
 | --------- | ----- | ---------- | --------------------------------------------- |
@@ -287,7 +289,7 @@ text (the result says so in a warning).
 
 Add a chord symbol to a measure in the live score.
 
-Not available with Dorico or Sibelius.
+Not available with Dorico.
 
 | Parameter | Type  | Default    | Description                               |
 | --------- | ----- | ---------- | ----------------------------------------- |
@@ -305,7 +307,8 @@ Not available with Dorico or Sibelius.
 
 Add a dynamic marking to a measure in the live score.
 
-Not available with Dorico or Sibelius.
+Not available with Dorico. Sibelius writes dynamics spelled with the
+letters p, m, f, r, s, z and n.
 
 | Parameter | Type  | Default    | Description                                              |
 | --------- | ----- | ---------- | -------------------------------------------------------- |
@@ -324,10 +327,10 @@ Not available with Dorico or Sibelius.
 
 Set the bar line at the end of a measure in the live score.
 
-| Parameter      | Type  | Default    | Description                                                                                                                                                                                                                                                                                                                   |
-| -------------- | ----- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `measure`      | `int` | (required) | Measure number (1-indexed).                                                                                                                                                                                                                                                                                                   |
-| `barline_type` | `str` | (required) | One of "normal", "double", "final", "dashed", "dotted", "tick", "short", "startRepeat", "endRepeat" or "endStartRepeat". "startRepeat" marks the start of this measure; "endStartRepeat" ends a repeat here and starts one in the next measure. Dorico and Sibelius support "double", "final", "startRepeat" and "endRepeat". |
+| Parameter      | Type  | Default    | Description                                                                                                                                                                                                                                                                                                                                                                |
+| -------------- | ----- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`      | `int` | (required) | Measure number (1-indexed).                                                                                                                                                                                                                                                                                                                                                |
+| `barline_type` | `str` | (required) | One of "normal", "double", "final", "dashed", "dotted", "tick", "short", "startRepeat", "endRepeat" or "endStartRepeat". "startRepeat" marks the start of this measure; "endStartRepeat" ends a repeat here and starts one in the next measure. Dorico supports "double", "final", "startRepeat" and "endRepeat"; Sibelius supports all but "dotted" and "endStartRepeat". |
 
 **Returns** `BarlineSet`.
 
@@ -340,7 +343,7 @@ Set the bar line at the end of a measure in the live score.
 
 Set the key signature from a measure onward in the live score.
 
-Not available with Dorico or Sibelius.
+Not available with Dorico.
 
 | Parameter | Type  | Default    | Description                                                                     |
 | --------- | ----- | ---------- | ------------------------------------------------------------------------------- |
@@ -358,7 +361,7 @@ Not available with Dorico or Sibelius.
 
 Set the time signature from a measure onward in the live score.
 
-Not available with Dorico or Sibelius.
+Not available with Dorico.
 
 | Parameter     | Type  | Default    | Description                        |
 | ------------- | ----- | ---------- | ---------------------------------- |
@@ -378,7 +381,7 @@ Not available with Dorico or Sibelius.
 
 Set the tempo at a measure in the live score.
 
-Not available with Dorico or Sibelius.
+Not available with Dorico.
 
 | Parameter | Type          | Default    | Description                                      |
 | --------- | ------------- | ---------- | ------------------------------------------------ |
@@ -398,7 +401,7 @@ Not available with Dorico or Sibelius.
 
 Append empty measures to the end of the live score.
 
-Not available with Dorico or Sibelius.
+Not available with Dorico.
 
 | Parameter | Type  | Default | Description                               |
 | --------- | ----- | ------- | ----------------------------------------- |
@@ -417,8 +420,7 @@ Transpose the notes of a passage by a number of semitones in the live score.
 
 Notes are moved with conventional spelling (a minor second up turns C
 into Db). Key signatures and chord symbols in the passage are left
-unchanged. Not available with Dorico or Sibelius, which cannot select
-a range.
+unchanged. Not available with Dorico, which cannot select a range.
 
 | Parameter       | Type  | Default    | Description                                              |
 | --------------- | ----- | ---------- | -------------------------------------------------------- |
@@ -580,14 +582,14 @@ A note length as a fraction of a whole note (1/4 is a quarter note).
 
 What sits at the cursor: a chord, a rest, a single note or something else.
 
-| Field      | Type                 | Description                          |
-| ---------- | -------------------- | ------------------------------------ |
-| `type`     | `int`                | The application's element type code. |
-| `notes`    | `list[Note] \| None` | The notes of a chord.                |
-| `duration` | `Duration \| None`   | The length of a chord or rest.       |
-| `pitch`    | `int \| None`        | MIDI pitch of a single note.         |
-| `tpc`      | `int \| None`        | Tonal pitch class of a single note.  |
-| `name`     | `str \| None`        | Name of a single note.               |
+| Field      | Type                 | Description                                                             |
+| ---------- | -------------------- | ----------------------------------------------------------------------- |
+| `type`     | `int \| str`         | The application's element type: MuseScore's code, Sibelius's type name. |
+| `notes`    | `list[Note] \| None` | The notes of a chord.                                                   |
+| `duration` | `Duration \| None`   | The length of a chord or rest.                                          |
+| `pitch`    | `int \| None`        | MIDI pitch of a single note.                                            |
+| `tpc`      | `int \| None`        | Tonal pitch class of a single note.                                     |
+| `name`     | `str \| None`        | Name of a single note.                                                  |
 
 ### `MeasureContent`
 
@@ -628,13 +630,15 @@ MCP server for music notation; runs the server by default.
 
 positional arguments:
   <command>
-    serve           run the MCP server (the default)
-    run             run a Python script with music21 available; extra
-                    arguments go to it
-    install         install the skill and the MuseScore plugin
-    install-skill   install the score-generate skill for Claude Code
-    install-plugin  install the bridge plugin into MuseScore
+    serve               run the MCP server (the default)
+    run                 run a Python script with music21 available; extra
+                        arguments go to it
+    install             install the skill and the MuseScore plugin
+    install-skill       install the score-generate skill for Claude Code
+    install-plugin      install the bridge plugin into MuseScore
+    install-sibelius-plugin
+                        install the bridge plug-in into Sibelius
 
 options:
-  -h, --help        show this help message and exit
+  -h, --help            show this help message and exit
 ```

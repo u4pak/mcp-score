@@ -3,9 +3,9 @@
 Every tool that takes a measure moves there first and refuses to continue
 if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
-the Remote Control API of Dorico and Sibelius triggers commands but cannot
-type into popovers or move the selection, so most of these tools work with
-MuseScore only.
+Dorico's Remote Control API triggers commands but cannot type into
+popovers or move the selection, so most of these tools work with
+MuseScore and Sibelius only.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ async def add_live_note(
 
     Consecutive calls on the same measure append notes one after another,
     since the application advances its cursor after each note. Not
-    available with Dorico or Sibelius.
+    available with Dorico.
 
     Args:
         measure: Measure number (1-indexed).
@@ -85,8 +85,10 @@ async def add_live_rehearsal_mark(
 ) -> RehearsalMarkAdded:
     """Add a rehearsal mark to a measure in the live score.
 
-    Dorico and Sibelius number rehearsal marks themselves and ignore the
-    text (the result says so in a warning).
+    Dorico numbers rehearsal marks itself and ignores the text; Sibelius
+    writes one or two letters or a number as given and numbers anything
+    else itself. The result says so in a warning when the text was not
+    kept.
 
     Args:
         measure: Measure number (1-indexed).
@@ -104,7 +106,7 @@ async def add_live_chord_symbol(
 ) -> ChordSymbolAdded:
     """Add a chord symbol to a measure in the live score.
 
-    Not available with Dorico or Sibelius.
+    Not available with Dorico.
 
     Args:
         measure: Measure number (1-indexed).
@@ -122,7 +124,8 @@ async def add_live_dynamic(
 ) -> DynamicAdded:
     """Add a dynamic marking to a measure in the live score.
 
-    Not available with Dorico or Sibelius.
+    Not available with Dorico. Sibelius writes dynamics spelled with the
+    letters p, m, f, r, s, z and n.
 
     Args:
         measure: Measure number (1-indexed).
@@ -147,8 +150,8 @@ async def set_live_barline(
             "tick", "short", "startRepeat", "endRepeat" or "endStartRepeat".
             "startRepeat" marks the start of this measure; "endStartRepeat"
             ends a repeat here and starts one in the next measure. Dorico
-            and Sibelius support "double", "final", "startRepeat" and
-            "endRepeat".
+            supports "double", "final", "startRepeat" and "endRepeat";
+            Sibelius supports all but "dotted" and "endStartRepeat".
     """
     bridge = require_bridge(context)
     require_measure(measure)
@@ -162,7 +165,7 @@ async def set_live_key_signature(
 ) -> KeySignatureSet:
     """Set the key signature from a measure onward in the live score.
 
-    Not available with Dorico or Sibelius.
+    Not available with Dorico.
 
     Args:
         measure: Measure number (1-indexed).
@@ -181,7 +184,7 @@ async def set_live_time_signature(
 ) -> TimeSignatureSet:
     """Set the time signature from a measure onward in the live score.
 
-    Not available with Dorico or Sibelius.
+    Not available with Dorico.
 
     Args:
         measure: Measure number (1-indexed).
@@ -202,7 +205,7 @@ async def set_live_tempo(
 ) -> TempoSet:
     """Set the tempo at a measure in the live score.
 
-    Not available with Dorico or Sibelius.
+    Not available with Dorico.
 
     Args:
         measure: Measure number (1-indexed).
@@ -223,7 +226,7 @@ async def append_live_measures(
 ) -> MeasuresAppended:
     """Append empty measures to the end of the live score.
 
-    Not available with Dorico or Sibelius.
+    Not available with Dorico.
 
     Args:
         count: How many measures to append (default: 1).
@@ -246,8 +249,7 @@ async def transpose_passage(
 
     Notes are moved with conventional spelling (a minor second up turns C
     into Db). Key signatures and chord symbols in the passage are left
-    unchanged. Not available with Dorico or Sibelius, which cannot select
-    a range.
+    unchanged. Not available with Dorico, which cannot select a range.
 
     Args:
         start_measure: First measure (1-indexed).

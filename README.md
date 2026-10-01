@@ -30,12 +30,12 @@ The assistant reads the live score, applies musical judgement, and writes the ar
 
 ## Supported applications
 
-| Application      | Versions                  | Status                                                                                                                          |
-| ---------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| MuseScore Studio | 4.4.2 and later           | Supported; CI tests the oldest supported line, a middle release and the newest. Earlier versions lack the plugin WebSocket API. |
-| Dorico           | 4 and later               | Experimental. Undocumented Remote Control API, command-only, not verified against a running instance.                           |
-| Sibelius         | Ultimate 2024.3 and later | Experimental. Sibelius Connect, command-only, not verified against a running instance.                                          |
-| Any notation app | MusicXML import           | Generated scores open anywhere MusicXML does.                                                                                   |
+| Application      | Versions         | Status                                                                                                                          |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| MuseScore Studio | 4.4.2 and later  | Supported; CI tests the oldest supported line, a middle release and the newest. Earlier versions lack the plugin WebSocket API. |
+| Dorico           | 4 and later      | Experimental. Undocumented Remote Control API, command-only, not verified against a running instance.                           |
+| Sibelius         | 2024.3 and later | Experimental. Sibelius Connect plus a bundled ManuScript plug-in, not verified against a running instance.                      |
+| Any notation app | MusicXML import  | Generated scores open anywhere MusicXML does.                                                                                   |
 
 ## Install
 
@@ -50,8 +50,9 @@ uv tool install mcp-score-server
 Then:
 
 ```bash
-mcp-score install-plugin   # MuseScore plugin, for live editing
-mcp-score install-skill    # score-generate skill, for Claude Code
+mcp-score install-plugin            # MuseScore plugin, for live editing
+mcp-score install-sibelius-plugin   # Sibelius plug-in (experimental)
+mcp-score install-skill             # score-generate skill, for Claude Code
 ```
 
 ## Connect your MCP client
