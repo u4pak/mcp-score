@@ -16,6 +16,7 @@ from mcp_score.bridge import BridgeError
 from mcp_score.bridge.remote_control import DEFAULT_CLIENT_NAME, HANDSHAKE_VERSION
 from mcp_score.bridge.results import (
     Articulation,
+    BeatPosition,
     Clef,
     Duration,
     Element,
@@ -729,11 +730,14 @@ class TestSibeliusNotation:
         bridge, connection = await _connected_bridge(plugin_reply({"notes": 3}))
 
         # Act
-        result = await bridge.set_articulation(2, 4, 1, "fermata", 3, False)
+        result = await bridge.set_articulation(
+            2, 4, 1, "fermata", BeatPosition(beat=3), False
+        )
 
-        # Assert: fermata is ManuScript's PauseArtic (13); True turns it on
+        # Assert: beat 3 starts 2 beats in; fermata is ManuScript's PauseArtic
+        # (13); True turns it on
         assert _plugin_calls(connection) == [
-            ("SetArticulation", [2, 4, 1, 3, 13, True])
+            ("SetArticulation", [2, 4, 1, 2, 1, 13, True])
         ]
         assert (result.articulation, result.removed, result.notes) == (
             "fermata",
@@ -749,9 +753,9 @@ class TestSibeliusNotation:
         # Act
         result = await bridge.set_articulation(1, 1, 0, "staccato", None, True)
 
-        # Assert: beat 0 means every beat, False turns it off
+        # Assert: a -1 offset means every note, False turns it off
         assert _plugin_calls(connection) == [
-            ("SetArticulation", [1, 1, 0, 0, 1, False])
+            ("SetArticulation", [1, 1, 0, -1, 1, 1, False])
         ]
         assert (result.removed, result.beat) == (True, None)
 
@@ -764,7 +768,7 @@ class TestSibeliusNotation:
         result = await bridge.set_notehead(5, 8, 0, "slash", None)
 
         # Assert: Sibelius calls a slash notehead a beat notehead (4)
-        assert _plugin_calls(connection) == [("SetNotehead", [5, 8, 0, 0, 4])]
+        assert _plugin_calls(connection) == [("SetNotehead", [5, 8, 0, -1, 1, 4])]
         assert result.notes == 12
 
     @pytest.mark.anyio()
@@ -779,7 +783,7 @@ class TestSibeliusNotation:
 
         # Assert
         assert _plugin_calls(connection) == [
-            ("AddLine", [3, 6, 2, 0, 0, "line.staff.octava.minus8"])
+            ("AddLine", [3, 6, 2, -1, 1, -1, 1, "line.staff.octava.minus8"])
         ]
         assert (result.line, result.start_measure, result.end_measure) == (
             "ottava_bassa",
@@ -853,12 +857,12 @@ class TestSibeliusPercussion:
         await bridge.go_to_measure(2)
 
         # Act
-        await bridge.go_to_beat(3)
+        await bridge.go_to_beat(BeatPosition(beat=3))
         await bridge.add_note(38, Duration(numerator=1, denominator=16))
 
         # Assert
         assert _plugin_calls(connection)[1:] == [
-            ("BeatToPosition", [2, 0, 3]),
+            ("BeatToPosition", [2, 0, 2, 1]),
             ("AddNote", [2, 0, 512, 38, 64]),
         ]
 
@@ -928,11 +932,11 @@ class TestSibeliusPercussion:
         bridge, connection = await _connected_bridge(plugin_reply({"notes": 4}))
 
         # Act
-        result = await bridge.set_tremolo(1, 2, 0, kind, strokes, 1)
+        result = await bridge.set_tremolo(1, 2, 0, kind, strokes, BeatPosition(beat=1))
 
         # Assert
         assert _plugin_calls(connection) == [
-            ("SetTremolo", [1, 2, 0, 1, between_notes, sent_strokes])
+            ("SetTremolo", [1, 2, 0, 0, 1, between_notes, sent_strokes])
         ]
         assert (result.kind, result.strokes, result.notes) == (kind, sent_strokes, 4)
 
@@ -994,14 +998,90 @@ class TestSibeliusPercussion:
         )
 
         # Act
-        result = await bridge.add_line(4, 5, 0, "decrescendo", 3, 1)
+        result = await bridge.add_line(
+            4, 5, 0, "decrescendo", BeatPosition(beat=3), BeatPosition(beat=1)
+        )
 
-        # Assert: decrescendo is Sibelius's diminuendo hairpin
+        # Assert: from 2 beats into measure 4 to the end of beat 1 (1 beat into
+        # measure 5), as Sibelius's diminuendo hairpin
         assert _plugin_calls(connection) == [
-            ("AddLine", [4, 5, 0, 3, 1, "line.staff.hairpin.diminuendo"])
+            ("AddLine", [4, 5, 0, 2, 1, 1, 1, "line.staff.hairpin.diminuendo"])
         ]
         assert (result.line, result.start_beat, result.end_beat) == (
             "decrescendo",
-            3,
-            1,
+            BeatPosition(beat=3),
+            BeatPosition(beat=1),
         )
+
+
+class TestSibeliusSubBeatOffsets:
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize(
+        ("position", "offset"),
+        [
+            pytest.param(BeatPosition(beat=1), [0, 1], id="downbeat"),
+            pytest.param(
+                BeatPosition(beat=2, subdivision=2, partial=2), [3, 2], id="and-of-2"
+            ),
+            pytest.param(
+                BeatPosition(beat=3, subdivision=4, partial=4), [11, 4], id="a-of-3"
+            ),
+            pytest.param(
+                BeatPosition(beat=1, subdivision=3, partial=3), [2, 3], id="let-of-1"
+            ),
+            pytest.param(
+                BeatPosition(beat=4, subdivision=5, partial=3),
+                [17, 5],
+                id="quintuplet-3-of-4",
+            ),
+        ],
+    )
+    async def test_position_reaches_the_plugin_as_an_exact_fraction_of_beats(
+        self, position: BeatPosition, offset: list[int]
+    ) -> None:
+        # Arrange: the plug-in turns beats into units with the bar's beat length
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"measure": 1, "staff": 0, "position": 0})
+        )
+
+        # Act
+        await bridge.go_to_beat(position)
+
+        # Assert
+        assert _plugin_calls(connection) == [("BeatToPosition", [1, 0, *offset])]
+
+    @pytest.mark.anyio()
+    async def test_line_ends_where_its_last_partial_ends(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"start_measure": 2, "end_measure": 2, "staff": 0})
+        )
+
+        # Act: from the e of 4 to the end of the a of 4
+        await bridge.add_line(
+            2,
+            2,
+            0,
+            "crescendo",
+            BeatPosition(beat=4, subdivision=4, partial=2),
+            BeatPosition(beat=4, subdivision=4, partial=4),
+        )
+
+        # Assert: 3 1/4 beats in to 4 beats in
+        assert _plugin_calls(connection) == [
+            ("AddLine", [2, 2, 0, 13, 4, 4, 1, "line.staff.hairpin.crescendo"])
+        ]
+
+
+class TestSibeliusNoteheadNumbers:
+    @pytest.mark.anyio()
+    async def test_notehead_number_is_sent_as_is(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(plugin_reply({"notes": 1}))
+
+        # Act: VDL's left-hand shot
+        result = await bridge.set_notehead(2, 2, 0, 51, BeatPosition(beat=1))
+
+        # Assert
+        assert _plugin_calls(connection) == [("SetNotehead", [2, 2, 0, 0, 1, 51])]
+        assert result.notehead == 51

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         Articulation,
         ArticulationSet,
         BarlineSet,
+        BeatPosition,
         ChordSymbolAdded,
         Clef,
         ClefSet,
@@ -211,13 +212,13 @@ class ScoreBridge(ABC):
         end_measure: int,
         staff: int,
         articulation: Articulation,
-        beat: int | None,
+        beat: BeatPosition | None,
         remove: bool,
     ) -> ArticulationSet:
         """Add (or remove) an articulation on the notes of a passage.
 
-        *beat* (1-indexed, in the time signature's beat unit) limits the
-        change to the notes starting on that beat of each measure.
+        *beat* limits the change to the notes starting there in each
+        measure.
         """
         raise self._not_supported("set articulations")
 
@@ -226,10 +227,13 @@ class ScoreBridge(ABC):
         start_measure: int,
         end_measure: int,
         staff: int,
-        notehead: Notehead,
-        beat: int | None,
+        notehead: Notehead | int,
+        beat: BeatPosition | None,
     ) -> NoteheadSet:
-        """Change the notehead of the notes of a passage; *beat* as above."""
+        """Change the notehead of the notes of a passage; *beat* as above.
+
+        *notehead* is a shape name or the application's notehead number.
+        """
         raise self._not_supported("change noteheads")
 
     async def add_line(
@@ -238,8 +242,8 @@ class ScoreBridge(ABC):
         end_measure: int,
         staff: int,
         line: LineType,
-        start_beat: int | None = None,
-        end_beat: int | None = None,
+        start_beat: BeatPosition | None = None,
+        end_beat: BeatPosition | None = None,
     ) -> LineAdded:
         """Add a line from one measure to another.
 
@@ -258,8 +262,8 @@ class ScoreBridge(ABC):
 
     # ── Rhythm and percussion notation ───────────────────────────────
 
-    async def go_to_beat(self, beat: int) -> CursorPosition:
-        """Move to a beat of the current measure (1-indexed, in its beat unit)."""
+    async def go_to_beat(self, beat: BeatPosition) -> CursorPosition:
+        """Move to a beat, or a partial of one, in the current measure."""
         raise self._not_supported("move to a beat")
 
     async def add_rest(
@@ -285,7 +289,7 @@ class ScoreBridge(ABC):
         staff: int,
         kind: TremoloKind,
         strokes: int,
-        beat: int | None,
+        beat: BeatPosition | None,
     ) -> TremoloSet:
         """Set tremolo strokes (0 removes them) on the notes of a passage."""
         raise self._not_supported("add tremolos")

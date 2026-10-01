@@ -19,6 +19,7 @@ from mcp_score.bridge import BridgeError
 from mcp_score.bridge.musescore import DEFAULT_PORT, MuseScoreBridge
 from mcp_score.bridge.results import (
     BarlineSet,
+    BeatPosition,
     ChordSymbolAdded,
     CursorInfo,
     CursorPosition,
@@ -518,7 +519,7 @@ class TestMuseScoreBridgeSibeliusOnlyOperations:
                 id="set_clef",
             ),
             pytest.param(
-                partial(MuseScoreBridge.go_to_beat, beat=2),
+                partial(MuseScoreBridge.go_to_beat, beat=BeatPosition(beat=2)),
                 "move to a beat",
                 id="go_to_beat",
             ),

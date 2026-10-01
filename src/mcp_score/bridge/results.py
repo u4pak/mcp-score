@@ -7,6 +7,7 @@ against it. The bridges build them from the applications' replies.
 
 from __future__ import annotations
 
+from fractions import Fraction
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -16,6 +17,7 @@ __all__ = [
     "Articulation",
     "ArticulationSet",
     "BarlineSet",
+    "BeatPosition",
     "ChordSymbolAdded",
     "Clef",
     "ClefSet",
@@ -233,6 +235,35 @@ class Transposed(Result):
     """How many notes were moved."""
 
 
+# ── Positions inside a measure ────────────────────────────────────────
+
+
+class BeatPosition(Result):
+    """A point in a measure: a beat, or a partial of one.
+
+    Beats count in the time signature's beat unit (quarters in 4/4,
+    eighths in 6/8). A beat is split into `subdivision` equal partials and
+    `partial` picks one, so the "and" of 2 is beat 2, partial 2 of 2, the
+    "a" of 3 is beat 3, partial 4 of 4, and the last note of a triplet on
+    beat 1 is beat 1, partial 3 of 3.
+    """
+
+    beat: int
+    """The beat (1-indexed)."""
+    subdivision: int = 1
+    """How many equal partials the beat is split into."""
+    partial: int = 1
+    """The partial (1-indexed) within the beat."""
+
+    def start(self) -> Fraction:
+        """Where the partial starts, in beats from the start of the measure."""
+        return self.beat - 1 + Fraction(self.partial - 1, self.subdivision)
+
+    def end(self) -> Fraction:
+        """Where the partial ends, in beats from the start of the measure."""
+        return self.beat - 1 + Fraction(self.partial, self.subdivision)
+
+
 # ── Notation on existing notes, lines, text and clefs ─────────────────
 
 type Articulation = Literal[
@@ -314,19 +345,20 @@ class ArticulationSet(Result):
     start_measure: int
     end_measure: int
     staff: int
-    beat: int | None
-    """The beat the change was limited to, or None for every note."""
+    beat: BeatPosition | None
+    """The position the change was limited to, or None for every note."""
     notes: int
     """How many notes and chords were changed."""
 
 
 class NoteheadSet(Result):
-    notehead: Notehead
+    notehead: Notehead | int
+    """The notehead, by name or by the application's notehead number."""
     start_measure: int
     end_measure: int
     staff: int
-    beat: int | None
-    """The beat the change was limited to, or None for every note."""
+    beat: BeatPosition | None
+    """The position the change was limited to, or None for every note."""
     notes: int
     """How many noteheads were changed (each note of a chord counts)."""
 
@@ -336,10 +368,10 @@ class LineAdded(Result):
     start_measure: int
     end_measure: int
     staff: int
-    start_beat: int | None = None
-    """The beat the line starts on, or None for the start of the measure."""
-    end_beat: int | None = None
-    """The beat the line ends with, or None for the end of the measure."""
+    start_beat: BeatPosition | None = None
+    """Where the line starts, or None for the start of the measure."""
+    end_beat: BeatPosition | None = None
+    """The beat or partial the line ends with, or None for the measure's end."""
 
 
 class TextAdded(Result):
@@ -390,8 +422,8 @@ class TremoloSet(Result):
     start_measure: int
     end_measure: int
     staff: int
-    beat: int | None
-    """The beat the change was limited to, or None for every note."""
+    beat: BeatPosition | None
+    """The position the change was limited to, or None for every note."""
     notes: int
     """How many notes and chords were changed."""
 

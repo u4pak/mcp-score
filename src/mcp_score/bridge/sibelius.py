@@ -41,6 +41,7 @@ from mcp_score.bridge.remote_control import (
 from mcp_score.bridge.results import (
     ArticulationSet,
     BarlineSet,
+    BeatPosition,
     ChordSymbolAdded,
     ClefSet,
     CursorInfo,
@@ -665,7 +666,7 @@ class SibeliusBridge(WebSocketBridge):
         end_measure: int,
         staff: int,
         articulation: Articulation,
-        beat: int | None,
+        beat: BeatPosition | None,
         remove: bool,
     ) -> ArticulationSet:
         reply = await self._run(
@@ -674,7 +675,7 @@ class SibeliusBridge(WebSocketBridge):
             start_measure,
             end_measure,
             staff,
-            beat or 0,
+            *_offset(None if beat is None else beat.start()),
             ARTICULATIONS[articulation],
             not remove,
         )
@@ -693,8 +694,8 @@ class SibeliusBridge(WebSocketBridge):
         start_measure: int,
         end_measure: int,
         staff: int,
-        notehead: Notehead,
-        beat: int | None,
+        notehead: Notehead | int,
+        beat: BeatPosition | None,
     ) -> NoteheadSet:
         reply = await self._run(
             _NotesChanged,
@@ -702,8 +703,8 @@ class SibeliusBridge(WebSocketBridge):
             start_measure,
             end_measure,
             staff,
-            beat or 0,
-            NOTEHEADS[notehead],
+            *_offset(None if beat is None else beat.start()),
+            notehead if isinstance(notehead, int) else NOTEHEADS[notehead],
         )
         return NoteheadSet(
             notehead=notehead,
@@ -720,8 +721,8 @@ class SibeliusBridge(WebSocketBridge):
         end_measure: int,
         staff: int,
         line: LineType,
-        start_beat: int | None = None,
-        end_beat: int | None = None,
+        start_beat: BeatPosition | None = None,
+        end_beat: BeatPosition | None = None,
     ) -> LineAdded:
         reply = await self._run(
             _LineReply,
@@ -729,8 +730,8 @@ class SibeliusBridge(WebSocketBridge):
             start_measure,
             end_measure,
             staff,
-            start_beat or 0,
-            end_beat or 0,
+            *_offset(None if start_beat is None else start_beat.start()),
+            *_offset(None if end_beat is None else end_beat.end()),
             LINE_STYLES[line],
         )
         return LineAdded(
@@ -770,13 +771,13 @@ class SibeliusBridge(WebSocketBridge):
 
     # ── Rhythm and percussion notation ───────────────────────────────
 
-    async def go_to_beat(self, beat: int) -> CursorPosition:
+    async def go_to_beat(self, beat: BeatPosition) -> CursorPosition:
         placed = await self._run(
             _NotePlaced,
             PluginMethod.BEAT_TO_POSITION,
             self._measure,
             self._staff,
-            beat,
+            *_offset(beat.start()),
         )
         self._position = placed.position
         return CursorPosition(measure=placed.measure, staff=placed.staff)
@@ -834,7 +835,7 @@ class SibeliusBridge(WebSocketBridge):
         staff: int,
         kind: TremoloKind,
         strokes: int,
-        beat: int | None,
+        beat: BeatPosition | None,
     ) -> TremoloSet:
         if kind == "buzz":
             strokes = BUZZ_ROLL
@@ -848,7 +849,7 @@ class SibeliusBridge(WebSocketBridge):
             start_measure,
             end_measure,
             staff,
-            beat or 0,
+            *_offset(None if beat is None else beat.start()),
             kind == "double",
             strokes,
         )
@@ -897,6 +898,18 @@ class SibeliusBridge(WebSocketBridge):
             staff=reply.staff,
             notes=reply.notes,
         )
+
+
+def _offset(beats: Fraction | None) -> tuple[int, int]:
+    """A point in a measure, in beats, as the numerator and denominator the
+    plug-in takes; (-1, 1) stands for no point (every note, or the bar's end).
+
+    The plug-in turns it into Sibelius units with the measure's beat length,
+    which only it knows.
+    """
+    if beats is None:
+        return -1, 1
+    return beats.numerator, beats.denominator
 
 
 def _length(duration: Duration, what: str) -> int:

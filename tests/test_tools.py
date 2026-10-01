@@ -24,6 +24,7 @@ from mcp_score.bridge.results import (
     ApplicationReply,
     ArticulationSet,
     BarlineSet,
+    BeatPosition,
     ChordSymbolAdded,
     ClefSet,
     CursorInfo,
@@ -50,7 +51,7 @@ from mcp_score.bridge.results import (
     TremoloSet,
     TupletAdded,
 )
-from mcp_score.tools import NOT_CONNECTED, ToolError, score_tool
+from mcp_score.tools import NOT_CONNECTED, ToolError, parse_beat, score_tool
 from mcp_score.tools.analysis import (
     MeasureContent,
     get_measure_content,
@@ -832,14 +833,19 @@ class TestManipulationHappyPaths:
                 bind_arguments(
                     set_live_articulation, 3, 4, "fermata", staff=1, beat=3, remove=True
                 ),
-                [BridgeCall("set_articulation", (3, 4, 1, "fermata", 3, True))],
+                [
+                    BridgeCall(
+                        "set_articulation",
+                        (3, 4, 1, "fermata", BeatPosition(beat=3), True),
+                    )
+                ],
                 ArticulationSet(
                     articulation="fermata",
                     removed=True,
                     start_measure=3,
                     end_measure=4,
                     staff=1,
-                    beat=3,
+                    beat=BeatPosition(beat=3),
                     notes=2,
                 ),
                 id="set_live_articulation",
@@ -1028,7 +1034,7 @@ class TestPercussionTools:
                 [
                     BridgeCall("go_to_measure", (2,)),
                     BridgeCall("go_to_staff", (1,)),
-                    BridgeCall("go_to_beat", (2,)),
+                    BridgeCall("go_to_beat", (BeatPosition(beat=2),)),
                     BridgeCall("add_rest", (EIGHTH, True)),
                 ],
                 RestAdded(measure=2, staff=1, duration=EIGHTH),
@@ -1070,7 +1076,7 @@ class TestPercussionTools:
                 [
                     BridgeCall("go_to_measure", (5,)),
                     BridgeCall("go_to_staff", (0,)),
-                    BridgeCall("go_to_beat", (3,)),
+                    BridgeCall("go_to_beat", (BeatPosition(beat=3),)),
                     BridgeCall("add_grace_notes", ("drag",)),
                 ],
                 GraceNotesAdded(ornament="drag", measure=5, staff=0, notes=2),
@@ -1103,7 +1109,7 @@ class TestPercussionTools:
                 [
                     BridgeCall("go_to_measure", (7,)),
                     BridgeCall("go_to_staff", (0,)),
-                    BridgeCall("go_to_beat", (4,)),
+                    BridgeCall("go_to_beat", (BeatPosition(beat=4),)),
                     BridgeCall("add_dynamic", ("fp",)),
                 ],
                 DynamicAdded(dynamic="fp", measure=7),
@@ -1113,14 +1119,26 @@ class TestPercussionTools:
                 bind_arguments(
                     add_live_line, 4, 4, "crescendo", start_beat=3, end_beat=4
                 ),
-                [BridgeCall("add_line", (4, 4, 0, "crescendo", 3, 4))],
+                [
+                    BridgeCall(
+                        "add_line",
+                        (
+                            4,
+                            4,
+                            0,
+                            "crescendo",
+                            BeatPosition(beat=3),
+                            BeatPosition(beat=4),
+                        ),
+                    )
+                ],
                 LineAdded(
                     line="crescendo",
                     start_measure=4,
                     end_measure=4,
                     staff=0,
-                    start_beat=3,
-                    end_beat=4,
+                    start_beat=BeatPosition(beat=3),
+                    end_beat=BeatPosition(beat=4),
                 ),
                 id="add_live_line-over-beats",
             ),
@@ -1129,7 +1147,7 @@ class TestPercussionTools:
                 [
                     BridgeCall("go_to_measure", (2,)),
                     BridgeCall("go_to_staff", (0,)),
-                    BridgeCall("go_to_beat", (2,)),
+                    BridgeCall("go_to_beat", (BeatPosition(beat=2),)),
                     BridgeCall("add_note", (38, SIXTEENTH, True)),
                 ],
                 NoteAdded(measure=2, staff=0, pitch=38, duration=SIXTEENTH),
@@ -1208,7 +1226,7 @@ class TestPercussionTools:
                 bind_arguments(
                     add_live_line, 2, 2, "diminuendo", start_beat=3, end_beat=2
                 ),
-                "end_beat must be >= start_beat within one measure.",
+                "end_beat must come after start_beat within one measure.",
                 id="line-beats-backwards",
             ),
         ],
@@ -1251,3 +1269,187 @@ class TestPercussionTools:
 
         # Assert
         assert connected_bridge.calls_to("go_to_beat") == []
+
+
+# ── Positions inside a measure ───────────────────────────────────────
+
+
+class TestParseBeat:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            pytest.param(3, BeatPosition(beat=3), id="int"),
+            pytest.param("3", BeatPosition(beat=3), id="digits"),
+            pytest.param(
+                "2&", BeatPosition(beat=2, subdivision=2, partial=2), id="and"
+            ),
+            pytest.param(
+                "2+", BeatPosition(beat=2, subdivision=2, partial=2), id="plus"
+            ),
+            pytest.param(
+                " 2 AND ", BeatPosition(beat=2, subdivision=2, partial=2), id="word"
+            ),
+            pytest.param("4e", BeatPosition(beat=4, subdivision=4, partial=2), id="e"),
+            pytest.param("4a", BeatPosition(beat=4, subdivision=4, partial=4), id="a"),
+            pytest.param(
+                "1trip", BeatPosition(beat=1, subdivision=3, partial=2), id="trip"
+            ),
+            pytest.param(
+                "1Let", BeatPosition(beat=1, subdivision=3, partial=3), id="let"
+            ),
+            pytest.param(
+                "4:3/5",
+                BeatPosition(beat=4, subdivision=5, partial=3),
+                id="quintuplet",
+            ),
+            pytest.param(
+                "2 : 6 / 6",
+                BeatPosition(beat=2, subdivision=6, partial=6),
+                id="spaced-sextuplet",
+            ),
+            pytest.param(None, None, id="none"),
+        ],
+    )
+    def test_reads_counts_and_fractions(
+        self, value: int | str | None, expected: BeatPosition | None
+    ) -> None:
+        # Act / Assert
+        assert parse_beat(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "error"),
+        [
+            pytest.param(0, "beat must be >= 1.", id="zero"),
+            pytest.param("0&", "beat must be >= 1.", id="zero-and"),
+            pytest.param("2:4/3", "partial must be between 1", id="partial-too-big"),
+            pytest.param("2:0/3", "partial must be between 1", id="partial-zero"),
+            pytest.param("2x", "beat must be a beat number", id="unknown-syllable"),
+            pytest.param("&2", "beat must be a beat number", id="backwards"),
+        ],
+    )
+    def test_refuses_what_is_not_a_position(self, value: int | str, error: str) -> None:
+        # Act / Assert
+        with pytest.raises(ToolError, match=re.escape(error)):
+            parse_beat(value)
+
+    def test_partials_of_a_beat_order_by_where_they_start(self) -> None:
+        # Arrange: 1, 1e, 1trip, 1&, 1let, 1a, 2
+        names = ["1", "1e", "1trip", "1&", "1let", "1a", "2"]
+
+        # Act
+        starts = [position.start() for name in names if (position := parse_beat(name))]
+
+        # Assert
+        assert starts == sorted(starts)
+        assert len(set(starts)) == len(starts)
+
+
+class TestSubBeatPositions:
+    @pytest.mark.anyio()
+    async def test_note_on_the_and_of_two(
+        self, connected_bridge: FakeBridge, context: ScoreContext
+    ) -> None:
+        # Act
+        await add_live_note(context, 3, 38, 1, 8, beat="2&")
+
+        # Assert
+        assert connected_bridge.calls_to("go_to_beat") == [
+            BridgeCall("go_to_beat", (BeatPosition(beat=2, subdivision=2, partial=2),))
+        ]
+
+    @pytest.mark.anyio()
+    async def test_accent_on_the_last_triplet_partial_of_every_measure(
+        self, connected_bridge: FakeBridge, context: ScoreContext
+    ) -> None:
+        # Act
+        await set_live_articulation(context, 1, 8, "accent", beat="4let")
+
+        # Assert
+        assert connected_bridge.calls == [
+            BridgeCall(
+                "set_articulation",
+                (
+                    1,
+                    8,
+                    0,
+                    "accent",
+                    BeatPosition(beat=4, subdivision=3, partial=3),
+                    False,
+                ),
+            )
+        ]
+
+    @pytest.mark.anyio()
+    async def test_hairpin_within_one_beat_is_allowed(
+        self, connected_bridge: FakeBridge, context: ScoreContext
+    ) -> None:
+        # Act: from the e of 4 to the end of the a of 4
+        await add_live_line(context, 2, 2, "crescendo", start_beat="4e", end_beat="4a")
+
+        # Assert
+        assert connected_bridge.calls_to("add_line") == [
+            BridgeCall(
+                "add_line",
+                (
+                    2,
+                    2,
+                    0,
+                    "crescendo",
+                    BeatPosition(beat=4, subdivision=4, partial=2),
+                    BeatPosition(beat=4, subdivision=4, partial=4),
+                ),
+            )
+        ]
+
+    @pytest.mark.anyio()
+    async def test_hairpin_ending_where_it_starts_is_refused(
+        self, connected_bridge: FakeBridge, context: ScoreContext
+    ) -> None:
+        # Act: ends with the e of 4, which ends where the & of 4 starts
+        with pytest.raises(ToolError, match="end_beat must come after start_beat"):
+            await add_live_line(
+                context, 2, 2, "crescendo", start_beat="4&", end_beat="4e"
+            )
+
+        # Assert
+        assert connected_bridge.calls == []
+
+    @pytest.mark.anyio()
+    async def test_unreadable_position_touches_nothing(
+        self, connected_bridge: FakeBridge, context: ScoreContext
+    ) -> None:
+        # Act
+        with pytest.raises(ToolError, match="got 'two'"):
+            await add_live_dynamic(context, 1, "f", beat="two")
+
+        # Assert
+        assert connected_bridge.calls == []
+
+
+class TestNoteheadNumbers:
+    @pytest.mark.anyio()
+    async def test_notehead_number_reaches_the_bridge(
+        self, connected_bridge: FakeBridge, context: ScoreContext
+    ) -> None:
+        # Act: VDL's left-hand hit on the a of 3 in every measure
+        await set_live_notehead(context, 1, 4, 31, beat="3a")
+
+        # Assert
+        assert connected_bridge.calls == [
+            BridgeCall(
+                "set_notehead",
+                (1, 4, 0, 31, BeatPosition(beat=3, subdivision=4, partial=4)),
+            )
+        ]
+
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize("number", [-1, 128])
+    async def test_notehead_number_out_of_range_touches_nothing(
+        self, connected_bridge: FakeBridge, context: ScoreContext, number: int
+    ) -> None:
+        # Act
+        with pytest.raises(ToolError, match="between 0 and 127"):
+            await set_live_notehead(context, 1, 1, number)
+
+        # Assert
+        assert connected_bridge.calls == []

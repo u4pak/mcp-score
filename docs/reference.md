@@ -231,6 +231,11 @@ properties of the selected items as they come from its API.
 
 Manipulation tools: change the score in the connected application.
 
+Tools that take a `beat` accept any point in a measure, not just beats:
+beats count in the time signature's beat unit, and partials are written
+the way they are counted ("2&", "3e", "1trip") or as
+"beat:partial/subdivision" for any tuplet.
+
 Every tool that takes a measure moves there first and refuses to continue
 if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
@@ -248,14 +253,14 @@ Consecutive calls on the same measure append notes one after another,
 since the application advances its cursor after each note. Not
 available with Dorico.
 
-| Parameter     | Type          | Default    | Description                                                                                                            |
-| ------------- | ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `measure`     | `int`         | (required) | Measure number (1-indexed).                                                                                            |
-| `pitch`       | `int`         | (required) | MIDI pitch (60 = middle C). On a percussion staff the pitch picks the instrument, as the staff's drum map says.        |
-| `numerator`   | `int`         | `1`        | Duration numerator (default 1, with denominator 4 = quarter note).                                                     |
-| `denominator` | `int`         | `4`        | Duration denominator (default 4).                                                                                      |
-| `staff`       | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                                   |
-| `beat`        | `int \| None` | `None`     | Start on this beat (1-indexed, in the time signature's beat unit) instead of where the last note ended. Sibelius only. |
+| Parameter     | Type                 | Default    | Description                                                                                                                                                                |
+| ------------- | -------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`                | (required) | Measure number (1-indexed).                                                                                                                                                |
+| `pitch`       | `int`                | (required) | MIDI pitch (60 = middle C). On a percussion staff the pitch picks the instrument, as the staff's drum map says.                                                            |
+| `numerator`   | `int`                | `1`        | Duration numerator (default 1, with denominator 4 = quarter note).                                                                                                         |
+| `denominator` | `int`                | `4`        | Duration denominator (default 4).                                                                                                                                          |
+| `staff`       | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                       |
+| `beat`        | `int \| str \| None` | `None`     | Start here instead of where the last note ended: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Sibelius only. |
 
 **Returns** `NoteAdded`: A note was added; the position is where the cursor went afterwards.
 
@@ -314,12 +319,12 @@ Not available with Dorico. Sibelius writes dynamics spelled with the
 letters p, m, f, r, s, z and n, so "fp", "sfz", "rfz" and "n"
 (niente) work too.
 
-| Parameter | Type          | Default    | Description                                                                                                              |
-| --------- | ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `measure` | `int`         | (required) | Measure number (1-indexed).                                                                                              |
-| `dynamic` | `str`         | (required) | Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz".                                                                 |
-| `staff`   | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                                     |
-| `beat`    | `int \| None` | `None`     | Place it on this beat (1-indexed, in the time signature's beat unit) instead of the start of the measure. Sibelius only. |
+| Parameter | Type                 | Default    | Description                                                                                                                                                                     |
+| --------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure` | `int`                | (required) | Measure number (1-indexed).                                                                                                                                                     |
+| `dynamic` | `str`                | (required) | Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz".                                                                                                                        |
+| `staff`   | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                            |
+| `beat`    | `int \| str \| None` | `None`     | Place it here instead of at the start of the measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Sibelius only. |
 
 **Returns** `DynamicAdded`.
 
@@ -449,26 +454,26 @@ Every note and chord in the measures gets the articulation, or only
 those starting on `beat` in each measure. Rests are left alone. Sibelius
 only for now.
 
-| Parameter       | Type           | Default    | Description                                                                                                   |
-| --------------- | -------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| `start_measure` | `int`          | (required) | First measure (1-indexed).                                                                                    |
-| `end_measure`   | `int`          | (required) | Last measure (inclusive, 1-indexed).                                                                          |
-| `articulation`  | `Articulation` | (required) | The articulation; "fermata" is the usual pause.                                                               |
-| `staff`         | `int`          | `0`        | Staff index (0-indexed, default: 0).                                                                          |
-| `beat`          | `int \| None`  | `None`     | Only notes starting on this beat (1-indexed, counted in the time signature's beat unit). Omit for every note. |
-| `remove`        | `bool`         | `false`    | Take the articulation off instead of adding it.                                                               |
+| Parameter       | Type                 | Default    | Description                                                                                                                                                               |
+| --------------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`                | (required) | First measure (1-indexed).                                                                                                                                                |
+| `end_measure`   | `int`                | (required) | Last measure (inclusive, 1-indexed).                                                                                                                                      |
+| `articulation`  | `Articulation`       | (required) | The articulation; "fermata" is the usual pause.                                                                                                                           |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                      |
+| `beat`          | `int \| str \| None` | `None`     | Only notes starting here in each measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit for every note. |
+| `remove`        | `bool`               | `false`    | Take the articulation off instead of adding it.                                                                                                                           |
 
 **Returns** `ArticulationSet`.
 
-| Field           | Type           | Description                                                 |
-| --------------- | -------------- | ----------------------------------------------------------- |
-| `articulation`  | `Articulation` |                                                             |
-| `removed`       | `bool`         | True when the articulation was taken off rather than added. |
-| `start_measure` | `int`          |                                                             |
-| `end_measure`   | `int`          |                                                             |
-| `staff`         | `int`          |                                                             |
-| `beat`          | `int \| None`  | The beat the change was limited to, or None for every note. |
-| `notes`         | `int`          | How many notes and chords were changed.                     |
+| Field           | Type                   | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `articulation`  | `Articulation`         |                                                                 |
+| `removed`       | `bool`                 | True when the articulation was taken off rather than added.     |
+| `start_measure` | `int`                  |                                                                 |
+| `end_measure`   | `int`                  |                                                                 |
+| `staff`         | `int`                  |                                                                 |
+| `beat`          | `BeatPosition \| None` | The position the change was limited to, or None for every note. |
+| `notes`         | `int`                  | How many notes and chords were changed.                         |
 
 ### `set_live_notehead`
 
@@ -478,24 +483,24 @@ Every note in the measures gets the notehead, or only the notes of
 chords starting on `beat` in each measure; "normal" restores the usual
 one. Sibelius only for now.
 
-| Parameter       | Type          | Default    | Description                                                                                                   |
-| --------------- | ------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| `start_measure` | `int`         | (required) | First measure (1-indexed).                                                                                    |
-| `end_measure`   | `int`         | (required) | Last measure (inclusive, 1-indexed).                                                                          |
-| `notehead`      | `Notehead`    | (required) | The notehead shape ("slash" for rhythm slashes, "cross" for ghost notes and percussion).                      |
-| `staff`         | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                          |
-| `beat`          | `int \| None` | `None`     | Only notes starting on this beat (1-indexed, counted in the time signature's beat unit). Omit for every note. |
+| Parameter       | Type                 | Default    | Description                                                                                                                                                                                                        |
+| --------------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `start_measure` | `int`                | (required) | First measure (1-indexed).                                                                                                                                                                                         |
+| `end_measure`   | `int`                | (required) | Last measure (inclusive, 1-indexed).                                                                                                                                                                               |
+| `notehead`      | `Notehead \| int`    | (required) | The notehead shape ("slash" for rhythm slashes, "cross" for ghost notes and percussion), or Sibelius's notehead number (0-127), which percussion templates such as VDL use to pick sounds; see vdl_notehead_guide. |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                                                               |
+| `beat`          | `int \| str \| None` | `None`     | Only notes starting here in each measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit for every note.                                          |
 
 **Returns** `NoteheadSet`.
 
-| Field           | Type          | Description                                                    |
-| --------------- | ------------- | -------------------------------------------------------------- |
-| `notehead`      | `Notehead`    |                                                                |
-| `start_measure` | `int`         |                                                                |
-| `end_measure`   | `int`         |                                                                |
-| `staff`         | `int`         |                                                                |
-| `beat`          | `int \| None` | The beat the change was limited to, or None for every note.    |
-| `notes`         | `int`         | How many noteheads were changed (each note of a chord counts). |
+| Field           | Type                   | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `notehead`      | `Notehead \| int`      | The notehead, by name or by the application's notehead number.  |
+| `start_measure` | `int`                  |                                                                 |
+| `end_measure`   | `int`                  |                                                                 |
+| `staff`         | `int`                  |                                                                 |
+| `beat`          | `BeatPosition \| None` | The position the change was limited to, or None for every note. |
+| `notes`         | `int`                  | How many noteheads were changed (each note of a chord counts).  |
 
 ### `add_live_line`
 
@@ -507,25 +512,25 @@ beats the line runs from the start of the first measure to the end of
 the last; with them, a hairpin can swell over a single beat. Sibelius
 only for now.
 
-| Parameter       | Type          | Default    | Description                                                                                                             |
-| --------------- | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `start_measure` | `int`         | (required) | Measure the line starts in (1-indexed).                                                                                 |
-| `end_measure`   | `int`         | (required) | Measure the line ends in (inclusive, 1-indexed).                                                                        |
-| `line`          | `LineType`    | (required) | The kind of line.                                                                                                       |
-| `staff`         | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                                    |
-| `start_beat`    | `int \| None` | `None`     | Start on this beat of the first measure (1-indexed, in the time signature's beat unit). Omit to start with the measure. |
-| `end_beat`      | `int \| None` | `None`     | End at the end of this beat of the last measure. Omit to end with the measure.                                          |
+| Parameter       | Type                 | Default    | Description                                                                                                                                                                            |
+| --------------- | -------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`                | (required) | Measure the line starts in (1-indexed).                                                                                                                                                |
+| `end_measure`   | `int`                | (required) | Measure the line ends in (inclusive, 1-indexed).                                                                                                                                       |
+| `line`          | `LineType`           | (required) | The kind of line.                                                                                                                                                                      |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                                   |
+| `start_beat`    | `int \| str \| None` | `None`     | Where in the first measure the line starts: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit to start with the measure. |
+| `end_beat`      | `int \| str \| None` | `None`     | The beat or partial of the last measure the line ends with (it ends where that one ends), in the same form. Omit to end with the measure.                                              |
 
 **Returns** `LineAdded`.
 
-| Field           | Type          | Description                                                        |
-| --------------- | ------------- | ------------------------------------------------------------------ |
-| `line`          | `LineType`    |                                                                    |
-| `start_measure` | `int`         |                                                                    |
-| `end_measure`   | `int`         |                                                                    |
-| `staff`         | `int`         |                                                                    |
-| `start_beat`    | `int \| None` | The beat the line starts on, or None for the start of the measure. |
-| `end_beat`      | `int \| None` | The beat the line ends with, or None for the end of the measure.   |
+| Field           | Type                   | Description                                                            |
+| --------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `line`          | `LineType`             |                                                                        |
+| `start_measure` | `int`                  |                                                                        |
+| `end_measure`   | `int`                  |                                                                        |
+| `staff`         | `int`                  |                                                                        |
+| `start_beat`    | `BeatPosition \| None` | Where the line starts, or None for the start of the measure.           |
+| `end_beat`      | `BeatPosition \| None` | The beat or partial the line ends with, or None for the measure's end. |
 
 ### `add_live_text`
 
@@ -535,13 +540,13 @@ Technique text for playing instructions ("pizz.", "con sord."),
 expression text for character ("dolce", "espress."), or plain or boxed
 text. Sibelius only for now.
 
-| Parameter | Type          | Default       | Description                                                                                               |
-| --------- | ------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
-| `measure` | `int`         | (required)    | Measure number (1-indexed).                                                                               |
-| `text`    | `str`         | (required)    | The text to write.                                                                                        |
-| `style`   | `TextStyle`   | `"technique"` | technique, expression, plain or boxed (default: technique).                                               |
-| `staff`   | `int`         | `0`           | Staff index (0-indexed, default: 0).                                                                      |
-| `beat`    | `int \| None` | `None`        | Place it on this beat (1-indexed, in the time signature's beat unit) instead of the start of the measure. |
+| Parameter | Type                 | Default       | Description                                                                                                                                                      |
+| --------- | -------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure` | `int`                | (required)    | Measure number (1-indexed).                                                                                                                                      |
+| `text`    | `str`                | (required)    | The text to write.                                                                                                                                               |
+| `style`   | `TextStyle`          | `"technique"` | technique, expression, plain or boxed (default: technique).                                                                                                      |
+| `staff`   | `int`                | `0`           | Staff index (0-indexed, default: 0).                                                                                                                             |
+| `beat`    | `int \| str \| None` | `None`        | Place it here instead of at the start of the measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
 
 **Returns** `TextAdded`.
 
@@ -579,13 +584,13 @@ Add a rest in the live score, where the last note or rest ended.
 Use it between add_live_note calls to write rhythms with rests; the
 cursor advances past the rest. Sibelius only for now.
 
-| Parameter     | Type          | Default    | Description                                                                                             |
-| ------------- | ------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
-| `measure`     | `int`         | (required) | Measure number (1-indexed).                                                                             |
-| `numerator`   | `int`         | `1`        | Duration numerator (default 1, with denominator 4 = quarter rest).                                      |
-| `denominator` | `int`         | `4`        | Duration denominator (default 4).                                                                       |
-| `staff`       | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                    |
-| `beat`        | `int \| None` | `None`     | Start on this beat (1-indexed, in the time signature's beat unit) instead of where the last note ended. |
+| Parameter     | Type                 | Default    | Description                                                                                                                                                 |
+| ------------- | -------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`                | (required) | Measure number (1-indexed).                                                                                                                                 |
+| `numerator`   | `int`                | `1`        | Duration numerator (default 1, with denominator 4 = quarter rest).                                                                                          |
+| `denominator` | `int`                | `4`        | Duration denominator (default 4).                                                                                                                           |
+| `staff`       | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                        |
+| `beat`        | `int \| str \| None` | `None`     | Start here instead of where the last note ended: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
 
 **Returns** `RestAdded`: A rest was added; the position is where the cursor went afterwards.
 
@@ -604,16 +609,16 @@ starting where the last note ended; the cursor advances past the
 tuplet. The defaults make an eighth-note triplet. Sibelius only for
 now.
 
-| Parameter     | Type                | Default    | Description                                                                                             |
-| ------------- | ------------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
-| `measure`     | `int`               | (required) | Measure number (1-indexed).                                                                             |
-| `pitches`     | `list[int \| None]` | (required) | One MIDI pitch per note, or null for a rest; exactly `actual` of them.                                  |
-| `actual`      | `int`               | `3`        | Notes in the tuplet (3 for a triplet, 6 for a sextuplet).                                               |
-| `normal`      | `int`               | `2`        | Notes of the same value it takes the time of (2 for a triplet, 4 for a sextuplet).                      |
-| `numerator`   | `int`               | `1`        | Note value numerator (default 1).                                                                       |
-| `denominator` | `int`               | `8`        | Note value denominator (default 8: eighth notes).                                                       |
-| `staff`       | `int`               | `0`        | Staff index (0-indexed, default: 0).                                                                    |
-| `beat`        | `int \| None`       | `None`     | Start on this beat (1-indexed, in the time signature's beat unit) instead of where the last note ended. |
+| Parameter     | Type                 | Default    | Description                                                                                                                                                 |
+| ------------- | -------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`                | (required) | Measure number (1-indexed).                                                                                                                                 |
+| `pitches`     | `list[int \| None]`  | (required) | One MIDI pitch per note, or null for a rest; exactly `actual` of them.                                                                                      |
+| `actual`      | `int`                | `3`        | Notes in the tuplet (3 for a triplet, 6 for a sextuplet).                                                                                                   |
+| `normal`      | `int`                | `2`        | Notes of the same value it takes the time of (2 for a triplet, 4 for a sextuplet).                                                                          |
+| `numerator`   | `int`                | `1`        | Note value numerator (default 1).                                                                                                                           |
+| `denominator` | `int`                | `8`        | Note value denominator (default 8: eighth notes).                                                                                                           |
+| `staff`       | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                        |
+| `beat`        | `int \| str \| None` | `None`     | Start here instead of where the last note ended: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
 
 **Returns** `TupletAdded`: A tuplet was filled; the position is where the cursor went afterwards.
 
@@ -636,26 +641,26 @@ roll, and "double" strokes between each note and the next, for mallet
 and timpani rolls between two pitches (the two notes need the same
 length). strokes 0 removes tremolos. Sibelius only for now.
 
-| Parameter       | Type          | Default    | Description                                                                                           |
-| --------------- | ------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
-| `start_measure` | `int`         | (required) | First measure (1-indexed).                                                                            |
-| `end_measure`   | `int`         | (required) | Last measure (inclusive, 1-indexed).                                                                  |
-| `kind`          | `TremoloKind` | `"single"` | single, double or buzz (default: single).                                                             |
-| `strokes`       | `int`         | `3`        | Tremolo strokes, 0 to 7 (default 3); ignored for buzz.                                                |
-| `staff`         | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                  |
-| `beat`          | `int \| None` | `None`     | Only notes starting on this beat (1-indexed, in the time signature's beat unit). Omit for every note. |
+| Parameter       | Type                 | Default    | Description                                                                                                                                                               |
+| --------------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`                | (required) | First measure (1-indexed).                                                                                                                                                |
+| `end_measure`   | `int`                | (required) | Last measure (inclusive, 1-indexed).                                                                                                                                      |
+| `kind`          | `TremoloKind`        | `"single"` | single, double or buzz (default: single).                                                                                                                                 |
+| `strokes`       | `int`                | `3`        | Tremolo strokes, 0 to 7 (default 3); ignored for buzz.                                                                                                                    |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                      |
+| `beat`          | `int \| str \| None` | `None`     | Only notes starting here in each measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit for every note. |
 
 **Returns** `TremoloSet`.
 
-| Field           | Type          | Description                                                 |
-| --------------- | ------------- | ----------------------------------------------------------- |
-| `kind`          | `TremoloKind` |                                                             |
-| `strokes`       | `int`         | Tremolo strokes (0 removes them); -1 for a buzz roll.       |
-| `start_measure` | `int`         |                                                             |
-| `end_measure`   | `int`         |                                                             |
-| `staff`         | `int`         |                                                             |
-| `beat`          | `int \| None` | The beat the change was limited to, or None for every note. |
-| `notes`         | `int`         | How many notes and chords were changed.                     |
+| Field           | Type                   | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `kind`          | `TremoloKind`          |                                                                 |
+| `strokes`       | `int`                  | Tremolo strokes (0 removes them); -1 for a buzz roll.           |
+| `start_measure` | `int`                  |                                                                 |
+| `end_measure`   | `int`                  |                                                                 |
+| `staff`         | `int`                  |                                                                 |
+| `beat`          | `BeatPosition \| None` | The position the change was limited to, or None for every note. |
+| `notes`         | `int`                  | How many notes and chords were changed.                         |
 
 ### `add_live_grace_notes`
 
@@ -665,12 +670,12 @@ A flam is one slashed eighth-note grace note, a drag two and a ruff
 three sixteenth-note grace notes, all on the note's line. The note
 must already be there. Sibelius only for now.
 
-| Parameter  | Type            | Default    | Description                                                                            |
-| ---------- | --------------- | ---------- | -------------------------------------------------------------------------------------- |
-| `measure`  | `int`           | (required) | Measure number (1-indexed).                                                            |
-| `ornament` | `GraceOrnament` | (required) | flam, drag or ruff.                                                                    |
-| `beat`     | `int`           | `1`        | The beat the note starts on (1-indexed, in the time signature's beat unit; default 1). |
-| `staff`    | `int`           | `0`        | Staff index (0-indexed, default: 0).                                                   |
+| Parameter  | Type            | Default    | Description                                                                                                                                   |
+| ---------- | --------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`  | `int`           | (required) | Measure number (1-indexed).                                                                                                                   |
+| `ornament` | `GraceOrnament` | (required) | flam, drag or ruff.                                                                                                                           |
+| `beat`     | `int \| str`    | `1`        | Where the note starts (default 1): a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
+| `staff`    | `int`           | `0`        | Staff index (0-indexed, default: 0).                                                                                                          |
 
 **Returns** `GraceNotesAdded`.
 
@@ -691,12 +696,12 @@ out. Separate groups with spaces ("R L R R L L", or "RH LH"); without
 spaces each character is one note ("RLRRLRLL"). Sibelius writes it as
 lyrics, the usual way to engrave sticking. Sibelius only for now.
 
-| Parameter  | Type          | Default    | Description                                                                       |
-| ---------- | ------------- | ---------- | --------------------------------------------------------------------------------- |
-| `measure`  | `int`         | (required) | Measure number (1-indexed).                                                       |
-| `sticking` | `str`         | (required) | The sticking, as described above.                                                 |
-| `staff`    | `int`         | `0`        | Staff index (0-indexed, default: 0).                                              |
-| `beat`     | `int \| None` | `None`     | Start under the note on this beat (1-indexed, in the time signature's beat unit). |
+| Parameter  | Type                 | Default    | Description                                                                                                                           |
+| ---------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`  | `int`                | (required) | Measure number (1-indexed).                                                                                                           |
+| `sticking` | `str`                | (required) | The sticking, as described above.                                                                                                     |
+| `staff`    | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                  |
+| `beat`     | `int \| str \| None` | `None`     | Start under the note here: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
 
 **Returns** `StickingAdded`.
 
@@ -783,6 +788,35 @@ No parameters.
 
 Load the score-generate instructions (music21 conventions, instrument reference and template) before generating a score with generate_score.
 
+## Guides tools
+
+Reference guides: notation knowledge an assistant reads before writing.
+
+The VDL notehead guide (`guides/vdl.md`) says which notehead plays
+each sound of the Virtual Drumline battery instruments in Sibelius.
+
+### `vdl_notehead_guide`
+
+Return the VDL (Virtual Drumline) notehead guide for the drumline battery.
+
+Read this before writing or editing snare, tenor, bass drum or cymbal
+line parts in a Sibelius score built on the VDL template. VDL picks
+each sound (left or right hand, hit, shot, rim, dread, rod, crush,
+roll...) by notehead number, and many of those noteheads look alike;
+the guide lists the number for every sound, to pass to
+set_live_notehead, and which sounds take a buzz or tremolo strokes.
+Takes no parameters.
+
+Returns the guide as Markdown.
+
+No parameters.
+
+**Returns** `str`.
+
+### Prompt `vdl-noteheads`
+
+Load the Virtual Drumline notehead numbers for the battery before writing drumline parts in Sibelius.
+
 ## Render tools
 
 Rendering tools: export score files through the MuseScore command line.
@@ -831,6 +865,22 @@ Whatever fields the application sends.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
+
+### `BeatPosition`
+
+A point in a measure: a beat, or a partial of one.
+
+Beats count in the time signature's beat unit (quarters in 4/4,
+eighths in 6/8). A beat is split into `subdivision` equal partials and
+`partial` picks one, so the "and" of 2 is beat 2, partial 2 of 2, the
+"a" of 3 is beat 3, partial 4 of 4, and the last note of a triplet on
+beat 1 is beat 1, partial 3 of 3.
+
+| Field         | Type  | Description                                     |
+| ------------- | ----- | ----------------------------------------------- |
+| `beat`        | `int` | The beat (1-indexed).                           |
+| `subdivision` | `int` | How many equal partials the beat is split into. |
+| `partial`     | `int` | The partial (1-indexed) within the beat.        |
 
 ### `Clef`
 

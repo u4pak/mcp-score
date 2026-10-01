@@ -23,6 +23,7 @@ from mcp_score.bridge.results import (
     Articulation,
     ArticulationSet,
     BarlineSet,
+    BeatPosition,
     ChordSymbolAdded,
     Clef,
     ClefSet,
@@ -345,7 +346,7 @@ class FakeBridge(ScoreBridge):
         end_measure: int,
         staff: int,
         articulation: Articulation,
-        beat: int | None,
+        beat: BeatPosition | None,
         remove: bool,
     ) -> ArticulationSet:
         return self._answer(
@@ -364,8 +365,8 @@ class FakeBridge(ScoreBridge):
         start_measure: int,
         end_measure: int,
         staff: int,
-        notehead: Notehead,
-        beat: int | None,
+        notehead: Notehead | int,
+        beat: BeatPosition | None,
     ) -> NoteheadSet:
         return self._answer(
             NoteheadSet,
@@ -383,8 +384,8 @@ class FakeBridge(ScoreBridge):
         end_measure: int,
         staff: int,
         line: LineType,
-        start_beat: int | None = None,
-        end_beat: int | None = None,
+        start_beat: BeatPosition | None = None,
+        end_beat: BeatPosition | None = None,
     ) -> LineAdded:
         return self._answer(
             LineAdded,
@@ -403,7 +404,7 @@ class FakeBridge(ScoreBridge):
     async def set_clef(self, clef: Clef) -> ClefSet:
         return self._answer(ClefSet, "set_clef", clef)
 
-    async def go_to_beat(self, beat: int) -> CursorPosition:
+    async def go_to_beat(self, beat: BeatPosition) -> CursorPosition:
         return self._answer(CursorPosition, "go_to_beat", beat)
 
     async def add_rest(
@@ -423,7 +424,7 @@ class FakeBridge(ScoreBridge):
         staff: int,
         kind: TremoloKind,
         strokes: int,
-        beat: int | None,
+        beat: BeatPosition | None,
     ) -> TremoloSet:
         return self._answer(
             TremoloSet,

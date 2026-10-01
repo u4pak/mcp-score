@@ -113,7 +113,7 @@ Sibelius 2024.3+ serves Sibelius Connect, a WebSocket API on port 1898 enabled o
 
 After the handshake there are two messages. `invokeCommands` runs Sibelius command IDs (the menu commands listed in chapter 5 of the guide) on the current selection; they take no parameters. `invokePlugin` calls a method of a ManuScript plug-in with arguments and returns its result as JSON.
 
-Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars, transposing, articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal, glissandi), staff text, clefs, rests, tuplets, tremolos and buzz rolls, grace notes (flams, drags, ruffs), sticking, and moving the cursor to a beat. The operations from articulations on are `ScoreBridge` methods that refuse by default, so the MuseScore and Dorico bridges report them as not supported yet. ManuScript has no call that adds a rest, so the plug-in adds a note and deletes it, which leaves a rest of the same length; and since it may not add to a bar while iterating over it, it collects the notes for sticking before writing the letters. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
+Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars, transposing, articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal, glissandi), staff text, clefs, rests, tuplets, tremolos and buzz rolls, grace notes (flams, drags, ruffs), sticking, and moving the cursor to any point in a measure (a beat, or a partial of one such as the "and" of 2 or the last note of a triplet). The operations from articulations on are `ScoreBridge` methods that refuse by default, so the MuseScore and Dorico bridges report them as not supported yet. ManuScript has no call that adds a rest, so the plug-in adds a note and deletes it, which leaves a rest of the same length; and since it may not add to a bar while iterating over it, it collects the notes for sticking before writing the letters. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
 
 Sibelius support is experimental: the bridge and plug-in follow the ManuScript Language Guide but have not been run against a real Sibelius.
 
@@ -171,6 +171,7 @@ src/mcp_score/
     connection.py       Connect/disconnect MuseScore, Dorico & Sibelius, ping, score info
     analysis.py         read_passage, get_measure_content, get_selection_properties
     generate.py         generate_score, score_generation_guide (+ score-generate prompt)
+    guides.py           vdl_notehead_guide (+ vdl-noteheads prompt)
     manipulation.py     Live notes, dynamics, rehearsal marks, chords, barlines, keys, time, tempo, measures, transpose, undo
     render.py           render_score (export through the MuseScore command line)
   bridge/
@@ -188,6 +189,8 @@ src/mcp_score/
     headless.py         Headless rendering through the MuseScore command line
     plugin/             MuseScore plugin: mcp-score-bridge.qml (server, dispatch) and its JS modules
                         (constants, score, reading, editing, selection, sequence)
+  guides/
+    vdl.md              VDL battery notehead guide, from VDL Maps 7.0a (used with permission)
   sibelius/
     paths.py            Where Sibelius keeps user plug-ins (per platform)
     plugin/             McpScoreBridge.plg: the ManuScript plug-in Sibelius Connect calls

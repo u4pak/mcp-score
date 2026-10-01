@@ -54,17 +54,17 @@ return problem;}"
 // The length of a beat in bar: the time signature's denominator as a note.
 timeSignature = score.SystemStaff.CurrentTimeSignature(bar);
 return 1024 / timeSignature.Denominator;}"
-	CheckBeat "(score, bar, staff, beat) {
-// The reason beat (1-indexed) is not in bar, or the empty string.
-if (beat < 1)
+	CheckOffset "(score, bar, staff, offsetNum, offsetDen) {
+// The reason the point offsetNum/offsetDen beats into bar is not inside
+// it, or the empty string.
+if (OffsetPosition(score, bar, offsetNum, offsetDen) >= StaffBar(score, bar, staff).Length)
 {
-	return 'beat must be >= 1';
-}
-if (BeatPosition(score, bar, beat) >= StaffBar(score, bar, staff).Length)
-{
-	return 'Measure ' & bar & ' has no beat ' & beat;
+	return 'That position is past the end of measure ' & bar;
 }
 return '';}"
+	NearPosition "(position, target) {
+// Notes in tuplets sit at rounded positions, so match within 2 units.
+return (((position - target) <= 2) and ((target - position) <= 2));}"
 	NextPosition "(barObject, bar, staff, position) {
 // Where the cursor goes after something ending at position in barObject.
 if (position >= barObject.Length)
@@ -77,21 +77,21 @@ return CreateDictionary('measure', bar, 'staff', staff, 'position', position);}"
 found = null;
 for each NoteRest noteRest in barObject
 {
-	if ((noteRest.VoiceNumber = 1) and (noteRest.Position = position) and (noteRest.NoteCount > 0))
+	if ((noteRest.VoiceNumber = 1) and (NearPosition(noteRest.Position, position)) and (noteRest.NoteCount > 0))
 	{
 		found = noteRest;
 	}
 }
 return found;}"
-	BeatPosition "(score, bar, beat) {
-// Where beat (1-indexed, in the time signature's beat unit) starts in bar,
-// or -1, meaning every position, when beat is 0.
-if (beat < 1)
+	OffsetPosition "(score, bar, offsetNum, offsetDen) {
+// Where the point offsetNum/offsetDen beats (in the time signature's beat
+// unit) into bar falls, in 1/256ths of a quarter note, or -1, meaning
+// every position, when offsetNum is negative.
+if (offsetNum < 0)
 {
 	return -1;
 }
-timeSignature = score.SystemStaff.CurrentTimeSignature(bar);
-return (beat - 1) * (1024 / timeSignature.Denominator);}"
+return Round(((offsetNum * 1.0) * BeatLength(score, bar)) / offsetDen);}"
 	Ping "() {
 return 'pong';}"
 	GetScore "() {
@@ -393,9 +393,10 @@ for each NoteRest noteRest in selection
 }
 selection.Transpose(degree, intervalType, False, False);
 return CreateDictionary('notes', notes);}"
-	SetArticulation "(startBar, endBar, staff, beat, articulation, present) {
+	SetArticulation "(startBar, endBar, staff, offsetNum, offsetDen, articulation, present) {
 // Turn an articulation on (present True) or off on every note and chord
-// of the passage, or on those starting on beat (0 means every beat).
+// of the passage, or on those starting offsetNum/offsetDen beats into each
+// bar (a negative offsetNum means every note).
 if (Sibelius.ScoreCount = 0)
 {
 	return Failure(_msgNoScore);
@@ -410,10 +411,10 @@ notes = 0;
 bar = startBar;
 while (bar <= endBar)
 {
-	position = BeatPosition(score, bar, beat);
+	position = OffsetPosition(score, bar, offsetNum, offsetDen);
 	for each NoteRest noteRest in StaffBar(score, bar, staff)
 	{
-		if ((noteRest.NoteCount > 0) and ((position < 0) or (noteRest.Position = position)))
+		if ((noteRest.NoteCount > 0) and ((position < 0) or NearPosition(noteRest.Position, position)))
 		{
 			noteRest.SetArticulation(articulation, present);
 			notes = notes + 1;
@@ -422,9 +423,10 @@ while (bar <= endBar)
 	bar = bar + 1;
 }
 return CreateDictionary('notes', notes);}"
-	SetNotehead "(startBar, endBar, staff, beat, noteStyle) {
-// Give every note of the passage, or of the chords starting on beat (0
-// means every beat), the notehead style with index noteStyle.
+	SetNotehead "(startBar, endBar, staff, offsetNum, offsetDen, noteStyle) {
+// Give every note of the passage, or of the chords starting offsetNum/
+// offsetDen beats into each bar (every chord when offsetNum is negative),
+// the notehead style with index noteStyle.
 if (Sibelius.ScoreCount = 0)
 {
 	return Failure(_msgNoScore);
@@ -439,10 +441,10 @@ notes = 0;
 bar = startBar;
 while (bar <= endBar)
 {
-	position = BeatPosition(score, bar, beat);
+	position = OffsetPosition(score, bar, offsetNum, offsetDen);
 	for each NoteRest noteRest in StaffBar(score, bar, staff)
 	{
-		if ((position < 0) or (noteRest.Position = position))
+		if ((position < 0) or NearPosition(noteRest.Position, position))
 		{
 			for each note in noteRest
 			{
@@ -454,36 +456,37 @@ while (bar <= endBar)
 	bar = bar + 1;
 }
 return CreateDictionary('notes', notes);}"
-	AddLine "(startBar, endBar, staff, startBeat, endBeat, styleId) {
-// A line of style styleId from startBeat of startBar (its start when 0)
-// to the end of endBeat of endBar (its end when 0).
+	AddLine "(startBar, endBar, staff, startNum, startDen, endNum, endDen, styleId) {
+// A line of style styleId from startNum/startDen beats into startBar (its
+// start when startNum is negative) to endNum/endDen beats into endBar (its
+// end when endNum is negative).
 if (Sibelius.ScoreCount = 0)
 {
 	return Failure(_msgNoScore);
 }
 score = Sibelius.ActiveScore;
 problem = CheckPassage(score, startBar, endBar, staff);
-if ((problem = '') and (startBeat > 0))
+if ((problem = '') and (startNum >= 0))
 {
-	problem = CheckBeat(score, startBar, staff, startBeat);
-}
-if ((problem = '') and (endBeat > 0))
-{
-	problem = CheckBeat(score, endBar, staff, endBeat);
+	problem = CheckOffset(score, startBar, staff, startNum, startDen);
 }
 if (problem != '')
 {
 	return Failure(problem);
 }
 startPosition = 0;
-if (startBeat > 0)
+if (startNum >= 0)
 {
-	startPosition = BeatPosition(score, startBar, startBeat);
+	startPosition = OffsetPosition(score, startBar, startNum, startDen);
 }
 endPosition = StaffBar(score, endBar, staff).Length;
-if (endBeat > 0)
+if (endNum >= 0)
 {
-	endPosition = BeatPosition(score, endBar, endBeat) + BeatLength(score, endBar);
+	endPosition = OffsetPosition(score, endBar, endNum, endDen);
+	if (endPosition > StaffBar(score, endBar, staff).Length)
+	{
+		return Failure('That position is past the end of measure ' & endBar);
+	}
 }
 duration = endPosition - startPosition;
 bar = startBar;
@@ -536,7 +539,7 @@ if (clef = null)
 	return Failure('Sibelius could not add the clef ' & clefId & '.');
 }
 return CreateDictionary('measure', bar, 'staff', staff);}"
-	BeatToPosition "(bar, staff, beat) {
+	BeatToPosition "(bar, staff, offsetNum, offsetDen) {
 if (Sibelius.ScoreCount = 0)
 {
 	return Failure(_msgNoScore);
@@ -545,13 +548,13 @@ score = Sibelius.ActiveScore;
 problem = CheckPosition(score, bar, staff);
 if (problem = '')
 {
-	problem = CheckBeat(score, bar, staff, beat);
+	problem = CheckOffset(score, bar, staff, offsetNum, offsetDen);
 }
 if (problem != '')
 {
 	return Failure(problem);
 }
-return CreateDictionary('measure', bar, 'staff', staff, 'position', BeatPosition(score, bar, beat));}"
+return CreateDictionary('measure', bar, 'staff', staff, 'position', OffsetPosition(score, bar, offsetNum, offsetDen));}"
 	AddRest "(bar, staff, position, duration) {
 // ManuScript cannot add a rest directly: add a note and delete it, which
 // leaves a rest of the same duration.
@@ -626,10 +629,11 @@ for index = 0 to pitches.Length
 following = NextPosition(barObject, bar, staff, position + played);
 following['notes'] = notes;
 return following;}"
-	SetTremolo "(startBar, endBar, staff, beat, betweenNotes, strokes) {
+	SetTremolo "(startBar, endBar, staff, offsetNum, offsetDen, betweenNotes, strokes) {
 // Tremolo strokes on the stem (betweenNotes False; -1 is a buzz roll) or
 // between each note and the next (betweenNotes True), on every note and chord
-// of the passage or on those starting on beat (0 means every beat).
+// of the passage or on those starting offsetNum/offsetDen beats into each
+// bar (every one when offsetNum is negative).
 if (Sibelius.ScoreCount = 0)
 {
 	return Failure(_msgNoScore);
@@ -644,10 +648,10 @@ notes = 0;
 bar = startBar;
 while (bar <= endBar)
 {
-	position = BeatPosition(score, bar, beat);
+	position = OffsetPosition(score, bar, offsetNum, offsetDen);
 	for each NoteRest noteRest in StaffBar(score, bar, staff)
 	{
-		if ((noteRest.NoteCount > 0) and ((position < 0) or (noteRest.Position = position)))
+		if ((noteRest.NoteCount > 0) and ((position < 0) or NearPosition(noteRest.Position, position)))
 		{
 			if (betweenNotes)
 			{
@@ -725,7 +729,7 @@ while ((current <= score.SystemStaff.BarCount) and (bars.Length < letters.Length
 {
 	for each NoteRest noteRest in StaffBar(score, current, staff)
 	{
-		if ((noteRest.VoiceNumber = 1) and (noteRest.NoteCount > 0) and (noteRest.Position >= start) and (bars.Length < letters.Length))
+		if ((noteRest.VoiceNumber = 1) and (noteRest.NoteCount > 0) and ((noteRest.Position + 2) >= start) and (bars.Length < letters.Length))
 		{
 			bars.Push(current);
 			positions.Push(noteRest.Position);

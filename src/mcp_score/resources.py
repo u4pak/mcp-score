@@ -6,6 +6,7 @@ import importlib.resources
 from pathlib import Path
 
 __all__ = [
+    "GUIDES_DIRECTORY",
     "PLUGIN_DIRECTORY",
     "SIBELIUS_PLUGIN_DIRECTORY",
     "SKILL_DIRECTORY",
@@ -17,6 +18,7 @@ __all__ = [
 SKILL_DIRECTORY = Path(".claude") / "skills" / "score-generate"
 PLUGIN_DIRECTORY = Path("musescore") / "plugin"
 SIBELIUS_PLUGIN_DIRECTORY = Path("sibelius") / "plugin"
+GUIDES_DIRECTORY = Path("guides")
 
 
 def package_path(resource_path: str) -> Path:

@@ -1,5 +1,10 @@
 """Manipulation tools: change the score in the connected application.
 
+Tools that take a `beat` accept any point in a measure, not just beats:
+beats count in the time signature's beat unit, and partials are written
+the way they are counted ("2&", "3e", "1trip") or as
+"beat:partial/subdivision" for any tuplet.
+
 Every tool that takes a measure moves there first and refuses to continue
 if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
@@ -49,7 +54,7 @@ from mcp_score.context import ScoreContext
 from mcp_score.tools import (
     ToolError,
     navigate,
-    require_beat,
+    parse_beat,
     require_bridge,
     require_measure,
     require_measure_range,
@@ -63,6 +68,7 @@ __all__ = ["register"]
 
 MIN_MIDI_PITCH = 0
 MAX_MIDI_PITCH = 127
+MAX_NOTEHEAD_NUMBER = 127
 
 
 def _require_pitch(pitch: int) -> None:
@@ -83,7 +89,7 @@ async def add_live_note(
     numerator: int = 1,
     denominator: int = 4,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> NoteAdded:
     """Add a note at the start of a measure in the live score.
 
@@ -98,15 +104,16 @@ async def add_live_note(
         numerator: Duration numerator (default 1, with denominator 4 = quarter note).
         denominator: Duration denominator (default 4).
         staff: Staff index (0-indexed, default: 0).
-        beat: Start on this beat (1-indexed, in the time signature's beat
-            unit) instead of where the last note ended. Sibelius only.
+        beat: Start here instead of where the last note ended: a beat (2), a
+            counted partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5"). Sibelius only.
     """
     bridge = require_bridge(context)
     require_measure(measure)
     _require_pitch(pitch)
     _require_duration(numerator, denominator)
-    require_beat(beat)
-    await navigate(bridge, measure, staff, beat)
+    position = parse_beat(beat)
+    await navigate(bridge, measure, staff, position)
     return await bridge.add_note(
         pitch, Duration(numerator=numerator, denominator=denominator)
     )
@@ -157,7 +164,7 @@ async def add_live_dynamic(
     measure: int,
     dynamic: str,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> DynamicAdded:
     """Add a dynamic marking to a measure in the live score.
 
@@ -169,13 +176,14 @@ async def add_live_dynamic(
         measure: Measure number (1-indexed).
         dynamic: Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz".
         staff: Staff index (0-indexed, default: 0).
-        beat: Place it on this beat (1-indexed, in the time signature's
-            beat unit) instead of the start of the measure. Sibelius only.
+        beat: Place it here instead of at the start of the measure: a beat (2),
+            a counted partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5"). Sibelius only.
     """
     bridge = require_bridge(context)
     require_measure(measure)
-    require_beat(beat)
-    await navigate(bridge, measure, staff, beat)
+    position = parse_beat(beat)
+    await navigate(bridge, measure, staff, position)
     return await bridge.add_dynamic(dynamic)
 
 
@@ -322,7 +330,7 @@ async def set_live_articulation(
     end_measure: int,
     articulation: Articulation,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
     remove: bool = False,
 ) -> ArticulationSet:
     """Add an articulation to the notes of a passage in the live score.
@@ -336,15 +344,16 @@ async def set_live_articulation(
         end_measure: Last measure (inclusive, 1-indexed).
         articulation: The articulation; "fermata" is the usual pause.
         staff: Staff index (0-indexed, default: 0).
-        beat: Only notes starting on this beat (1-indexed, counted in the
-            time signature's beat unit). Omit for every note.
+        beat: Only notes starting here in each measure: a beat (2), a counted
+            partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5"). Omit for every note.
         remove: Take the articulation off instead of adding it.
     """
     bridge = require_bridge(context)
     require_measure_range(start_measure, end_measure)
-    require_beat(beat)
+    position = parse_beat(beat)
     return await bridge.set_articulation(
-        start_measure, end_measure, staff, articulation, beat, remove
+        start_measure, end_measure, staff, articulation, position, remove
     )
 
 
@@ -353,9 +362,9 @@ async def set_live_notehead(
     context: ScoreContext,
     start_measure: int,
     end_measure: int,
-    notehead: Notehead,
+    notehead: Notehead | int,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> NoteheadSet:
     """Change the notehead of the notes of a passage in the live score.
 
@@ -367,15 +376,22 @@ async def set_live_notehead(
         start_measure: First measure (1-indexed).
         end_measure: Last measure (inclusive, 1-indexed).
         notehead: The notehead shape ("slash" for rhythm slashes, "cross"
-            for ghost notes and percussion).
+            for ghost notes and percussion), or Sibelius's notehead number
+            (0-127), which percussion templates such as VDL use to pick
+            sounds; see vdl_notehead_guide.
         staff: Staff index (0-indexed, default: 0).
-        beat: Only notes starting on this beat (1-indexed, counted in the
-            time signature's beat unit). Omit for every note.
+        beat: Only notes starting here in each measure: a beat (2), a counted
+            partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5"). Omit for every note.
     """
     bridge = require_bridge(context)
     require_measure_range(start_measure, end_measure)
-    require_beat(beat)
-    return await bridge.set_notehead(start_measure, end_measure, staff, notehead, beat)
+    if isinstance(notehead, int) and not 0 <= notehead <= MAX_NOTEHEAD_NUMBER:
+        raise ToolError(f"notehead number must be between 0 and {MAX_NOTEHEAD_NUMBER}.")
+    position = parse_beat(beat)
+    return await bridge.set_notehead(
+        start_measure, end_measure, staff, notehead, position
+    )
 
 
 @score_tool
@@ -385,8 +401,8 @@ async def add_live_line(
     end_measure: int,
     line: LineType,
     staff: int = 0,
-    start_beat: int | None = None,
-    end_beat: int | None = None,
+    start_beat: int | str | None = None,
+    end_beat: int | str | None = None,
 ) -> LineAdded:
     """Add a line from one measure to another in the live score.
 
@@ -401,25 +417,26 @@ async def add_live_line(
         end_measure: Measure the line ends in (inclusive, 1-indexed).
         line: The kind of line.
         staff: Staff index (0-indexed, default: 0).
-        start_beat: Start on this beat of the first measure (1-indexed, in
-            the time signature's beat unit). Omit to start with the measure.
-        end_beat: End at the end of this beat of the last measure. Omit to
-            end with the measure.
+        start_beat: Where in the first measure the line starts: a beat (2), a
+            counted partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5"). Omit to start with the
+            measure.
+        end_beat: The beat or partial of the last measure the line ends with (it
+            ends where that one ends), in the same form. Omit to end with the
+            measure.
     """
     bridge = require_bridge(context)
     require_measure_range(start_measure, end_measure)
-    require_beat(start_beat, "start_beat")
-    require_beat(end_beat, "end_beat")
+    start = parse_beat(start_beat, "start_beat")
+    end = parse_beat(end_beat, "end_beat")
     if (
         start_measure == end_measure
-        and start_beat is not None
-        and end_beat is not None
-        and end_beat < start_beat
+        and start is not None
+        and end is not None
+        and end.end() <= start.start()
     ):
-        raise ToolError("end_beat must be >= start_beat within one measure.")
-    return await bridge.add_line(
-        start_measure, end_measure, staff, line, start_beat, end_beat
-    )
+        raise ToolError("end_beat must come after start_beat within one measure.")
+    return await bridge.add_line(start_measure, end_measure, staff, line, start, end)
 
 
 @score_tool
@@ -429,7 +446,7 @@ async def add_live_text(
     text: str,
     style: TextStyle = "technique",
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> TextAdded:
     """Add staff text to a measure in the live score.
 
@@ -442,15 +459,16 @@ async def add_live_text(
         text: The text to write.
         style: technique, expression, plain or boxed (default: technique).
         staff: Staff index (0-indexed, default: 0).
-        beat: Place it on this beat (1-indexed, in the time signature's
-            beat unit) instead of the start of the measure.
+        beat: Place it here instead of at the start of the measure: a beat (2),
+            a counted partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5").
     """
     bridge = require_bridge(context)
     require_measure(measure)
     if not text.strip():
         raise ToolError("text must not be empty.")
-    require_beat(beat)
-    await navigate(bridge, measure, staff, beat)
+    position = parse_beat(beat)
+    await navigate(bridge, measure, staff, position)
     return await bridge.add_text(text, style)
 
 
@@ -480,7 +498,7 @@ async def add_live_rest(
     numerator: int = 1,
     denominator: int = 4,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> RestAdded:
     """Add a rest in the live score, where the last note or rest ended.
 
@@ -492,14 +510,15 @@ async def add_live_rest(
         numerator: Duration numerator (default 1, with denominator 4 = quarter rest).
         denominator: Duration denominator (default 4).
         staff: Staff index (0-indexed, default: 0).
-        beat: Start on this beat (1-indexed, in the time signature's beat
-            unit) instead of where the last note ended.
+        beat: Start here instead of where the last note ended: a beat (2), a
+            counted partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5").
     """
     bridge = require_bridge(context)
     require_measure(measure)
     _require_duration(numerator, denominator)
-    require_beat(beat)
-    await navigate(bridge, measure, staff, beat)
+    position = parse_beat(beat)
+    await navigate(bridge, measure, staff, position)
     return await bridge.add_rest(Duration(numerator=numerator, denominator=denominator))
 
 
@@ -513,7 +532,7 @@ async def add_live_tuplet(
     numerator: int = 1,
     denominator: int = 8,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> TupletAdded:
     """Add a tuplet (triplet, sextuplet, quintuplet...) in the live score.
 
@@ -532,8 +551,9 @@ async def add_live_tuplet(
         numerator: Note value numerator (default 1).
         denominator: Note value denominator (default 8: eighth notes).
         staff: Staff index (0-indexed, default: 0).
-        beat: Start on this beat (1-indexed, in the time signature's beat
-            unit) instead of where the last note ended.
+        beat: Start here instead of where the last note ended: a beat (2), a
+            counted partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5").
     """
     bridge = require_bridge(context)
     require_measure(measure)
@@ -545,8 +565,8 @@ async def add_live_tuplet(
         if pitch is not None:
             _require_pitch(pitch)
     _require_duration(numerator, denominator)
-    require_beat(beat)
-    await navigate(bridge, measure, staff, beat)
+    position = parse_beat(beat)
+    await navigate(bridge, measure, staff, position)
     return await bridge.add_tuplet(
         pitches, actual, normal, Duration(numerator=numerator, denominator=denominator)
     )
@@ -560,7 +580,7 @@ async def set_live_tremolo(
     kind: TremoloKind = "single",
     strokes: int = 3,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> TremoloSet:
     """Add tremolos (rolls) to the notes of a passage in the live score.
 
@@ -576,16 +596,17 @@ async def set_live_tremolo(
         kind: single, double or buzz (default: single).
         strokes: Tremolo strokes, 0 to 7 (default 3); ignored for buzz.
         staff: Staff index (0-indexed, default: 0).
-        beat: Only notes starting on this beat (1-indexed, in the time
-            signature's beat unit). Omit for every note.
+        beat: Only notes starting here in each measure: a beat (2), a counted
+            partial ("2&", "2e", "2a", "2trip", "2let") or
+            "beat:partial/subdivision" ("4:3/5"). Omit for every note.
     """
     bridge = require_bridge(context)
     require_measure_range(start_measure, end_measure)
     if strokes < 0:
         raise ToolError("strokes must be >= 0.")
-    require_beat(beat)
+    position = parse_beat(beat)
     return await bridge.set_tremolo(
-        start_measure, end_measure, staff, kind, strokes, beat
+        start_measure, end_measure, staff, kind, strokes, position
     )
 
 
@@ -594,7 +615,7 @@ async def add_live_grace_notes(
     context: ScoreContext,
     measure: int,
     ornament: GraceOrnament,
-    beat: int = 1,
+    beat: int | str = 1,
     staff: int = 0,
 ) -> GraceNotesAdded:
     """Add a flam, drag or ruff before a note in the live score.
@@ -606,14 +627,15 @@ async def add_live_grace_notes(
     Args:
         measure: Measure number (1-indexed).
         ornament: flam, drag or ruff.
-        beat: The beat the note starts on (1-indexed, in the time
-            signature's beat unit; default 1).
+        beat: Where the note starts (default 1): a beat (2), a counted partial
+            ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision"
+            ("4:3/5").
         staff: Staff index (0-indexed, default: 0).
     """
     bridge = require_bridge(context)
     require_measure(measure)
-    require_beat(beat)
-    await navigate(bridge, measure, staff, beat)
+    position = parse_beat(beat)
+    await navigate(bridge, measure, staff, position)
     return await bridge.add_grace_notes(ornament)
 
 
@@ -623,7 +645,7 @@ async def add_live_sticking(
     measure: int,
     sticking: str,
     staff: int = 0,
-    beat: int | None = None,
+    beat: int | str | None = None,
 ) -> StickingAdded:
     """Write sticking (R, L...) under the notes of the live score.
 
@@ -637,16 +659,17 @@ async def add_live_sticking(
         measure: Measure number (1-indexed).
         sticking: The sticking, as described above.
         staff: Staff index (0-indexed, default: 0).
-        beat: Start under the note on this beat (1-indexed, in the time
-            signature's beat unit).
+        beat: Start under the note here: a beat (2), a counted partial ("2&",
+            "2e", "2a", "2trip", "2let") or "beat:partial/subdivision"
+            ("4:3/5").
     """
     bridge = require_bridge(context)
     require_measure(measure)
     letters = sticking.split() if " " in sticking.strip() else list(sticking.strip())
     if not letters:
         raise ToolError("sticking must not be empty.")
-    require_beat(beat)
-    await navigate(bridge, measure, staff, beat)
+    position = parse_beat(beat)
+    await navigate(bridge, measure, staff, position)
     return await bridge.add_sticking(letters)
 
 

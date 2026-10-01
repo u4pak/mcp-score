@@ -23,6 +23,7 @@ src/mcp_score/
     analysis.py       Read passages and measures from live score
     manipulation.py   Modify live score (notes, rehearsal marks, dynamics, chords, barlines, keys, time, tempo, measures, transpose, undo; articulations, noteheads, lines, staff text, clefs, rests, tuplets, tremolos, grace notes, sticking on Sibelius)
     generate.py       Run music21 scripts and serve the score-generate guide (any MCP client)
+    guides.py         Serve reference guides (VDL notehead numbers for the drumline battery)
     render.py         Export score files through the MuseScore command line
   bridge/
     base.py           ScoreBridge abstract interface and BridgeError
@@ -38,6 +39,7 @@ src/mcp_score/
     executable.py     Where MuseScore's executable is (env var, PATH, platform defaults)
     headless.py       Headless rendering through the MuseScore command line
     plugin/           MuseScore plugin: mcp-score-bridge.qml (server, dispatch) and its JS modules
+  guides/             vdl.md: VDL battery notehead guide (used with permission)
   sibelius/
     paths.py          Where Sibelius keeps user plug-ins
     plugin/           McpScoreBridge.plg: ManuScript plug-in called through Sibelius Connect

@@ -123,7 +123,7 @@ Besides the tools that work with MuseScore, Sibelius can also take articulations
 
 ### Scoring percussion
 
-The Sibelius tools cover what a battery and front ensemble score needs. Notes, rests and tuplets go where the last one ended, or on a beat you name. Dynamics, text and hairpins can sit on any beat. Tremolos cover measured diddles, unmeasured rolls, buzz rolls and rolls between two mallet notes. Flams, drags and ruffs go before a note, and sticking goes under the notes. Accents, cross noteheads for rim shots and the percussion clef come from the tools above. On a percussion staff, a note's pitch picks the instrument through the staff's drum map. For example:
+The Sibelius tools cover what a battery and front ensemble score needs. Notes, rests and tuplets go where the last one ended, or at a point you name: a beat (`3`), a counted partial (`"2&"`, `"4e"`, `"1a"`, `"3trip"`, `"3let"`) or any tuplet partial as `"beat:partial/subdivision"` (`"4:3/5"`). Edits such as accents, noteheads and tremolos can be limited to that point in every measure. Dynamics, text and hairpins can sit on any beat. Tremolos cover measured diddles, unmeasured rolls, buzz rolls and rolls between two mallet notes. Flams, drags and ruffs go before a note, and sticking goes under the notes. Accents, cross noteheads for rim shots and the percussion clef come from the tools above. On a percussion staff, a note's pitch picks the instrument through the staff's drum map. For example:
 
 > "In the snare part, measure 1: four sixteenths on beat 1, an eighth-note triplet on beat 2, then a quarter note with a flam and an accent on beat 3, and a quarter rest."
 
@@ -132,6 +132,12 @@ The Sibelius tools cover what a battery and front ensemble score needs. Notes, r
 > "Write the sticking RLRR LRLL under measure 5 of the snare."
 
 > "Roll the marimba's half notes in measures 17-24 with double tremolos, and put an sfz on beat 1 of measure 25."
+
+> "Accent the 'and' of 2 and the last triplet partial of beat 4 in measures 1-8 of the tenors."
+
+If the score uses the Virtual Drumline (VDL) template, the assistant can read the `vdl_notehead_guide` tool first. VDL picks each battery sound (left or right hand, shot, rim, dread, crush, roll) by notehead number, and the guide lists those numbers for `set_live_notehead`:
+
+> "In the SnareLine, make the notes on the e of every beat in measure 3 left-hand rim clicks."
 
 ## Next steps
 

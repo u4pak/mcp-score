@@ -19,6 +19,7 @@ import pytest
 from mcp_score.server import SERVER_NAME, create_server
 from mcp_score.tools import NOT_CONNECTED, ToolError
 from mcp_score.tools.generate import PROMPT_NAME
+from mcp_score.tools.guides import VDL_PROMPT_NAME
 
 if TYPE_CHECKING:
     from mcp_score.bridge import BridgeRegistry
@@ -64,6 +65,7 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         # generate
         "generate_score",
         "score_generation_guide",
+        "vdl_notehead_guide",
         # render
         "render_score",
     }
@@ -117,7 +119,7 @@ class TestCreateServer:
             assert not not_snake_case, (tool.name, not_snake_case)
 
     @pytest.mark.anyio()
-    async def test_create_server_registers_prompt_under_hyphenated_name(
+    async def test_create_server_registers_prompts_under_hyphenated_names(
         self,
     ) -> None:
         # Arrange
@@ -127,7 +129,7 @@ class TestCreateServer:
         prompt_names = [prompt.name for prompt in await server.list_prompts()]
 
         # Assert
-        assert prompt_names == [PROMPT_NAME]
+        assert sorted(prompt_names) == sorted([PROMPT_NAME, VDL_PROMPT_NAME])
 
     @pytest.mark.anyio()
     async def test_lifespan_yields_state_holding_given_registry(
