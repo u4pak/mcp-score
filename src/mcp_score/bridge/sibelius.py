@@ -48,6 +48,7 @@ from mcp_score.bridge.results import (
     Duration,
     DynamicAdded,
     Element,
+    GraceNotesAdded,
     KeySignatureSet,
     LineAdded,
     MeasuresAppended,
@@ -55,13 +56,17 @@ from mcp_score.bridge.results import (
     NoteAdded,
     NoteheadSet,
     RehearsalMarkAdded,
+    RestAdded,
     ScoreInfo,
     SelectedRange,
     SelectionProperties,
+    StickingAdded,
     TempoSet,
     TextAdded,
     TimeSignatureSet,
     Transposed,
+    TremoloSet,
+    TupletAdded,
 )
 from mcp_score.bridge.websocket import DEFAULT_HOST, WebSocketBridge
 
@@ -70,9 +75,11 @@ if TYPE_CHECKING:
     from mcp_score.bridge.results import (
         Articulation,
         Clef,
+        GraceOrnament,
         LineType,
         Notehead,
         TextStyle,
+        TremoloKind,
     )
     from mcp_score.bridge.websocket import WebSocketTransport
 
@@ -140,6 +147,20 @@ SEMITONE_INTERVALS: tuple[tuple[int, int], ...] = (
 NATURAL_SEMITONES = (0, 2, 4, 5, 7, 9, 11)
 NATURAL_TONAL_PITCH_CLASSES = (14, 16, 18, 13, 15, 17, 19)
 
+BUZZ_ROLL = -1
+"""ManuScript's SingleTremolos value for a z on the stem."""
+
+MAX_TREMOLO_STROKES = 7
+
+# Grace notes for each ornament: how many, whether slashed (acciaccatura)
+# and their length: a flam is one eighth-note acciaccatura, a drag two and
+# a ruff three sixteenth-note grace notes.
+GRACE_ORNAMENTS: dict[GraceOrnament, tuple[int, bool, int]] = {
+    "flam": (1, True, 128),
+    "drag": (2, False, 64),
+    "ruff": (3, False, 64),
+}
+
 REHEARSAL_MARK = re.compile(r"[A-Za-z]{1,2}|\d+")
 """Rehearsal marks Sibelius can write as given: letters or a number."""
 
@@ -190,6 +211,7 @@ LINE_STYLES: dict[LineType, str] = {
     "slur_below": "line.staff.slur.down",
     "crescendo": "line.staff.hairpin.crescendo",
     "diminuendo": "line.staff.hairpin.diminuendo",
+    "decrescendo": "line.staff.hairpin.diminuendo",
     "trill": "line.staff.trill",
     "ottava": "line.staff.octava.plus8",
     "ottava_bassa": "line.staff.octava.minus8",
@@ -246,6 +268,12 @@ class PluginMethod(StrEnum):
     ADD_LINE = "AddLine"
     ADD_STAFF_TEXT = "AddStaffText"
     SET_CLEF = "SetClef"
+    BEAT_TO_POSITION = "BeatToPosition"
+    ADD_REST = "AddRest"
+    ADD_TUPLET = "AddTuplet"
+    SET_TREMOLO = "SetTremolo"
+    ADD_GRACE_NOTES = "AddGraceNotes"
+    ADD_STICKING = "AddSticking"
 
 
 # ── What the plug-in returns where no result model fits ───────────────
@@ -306,6 +334,18 @@ class _LineReply(_PluginReply):
     start_measure: int
     end_measure: int
     staff: int
+
+
+class _TupletPlaced(_NotePlaced):
+    notes: int
+
+
+class _CountAt(_PluginReply):
+    """How many things were written at a measure and staff."""
+
+    measure: int
+    staff: int
+    notes: int
 
 
 class SibeliusBridge(WebSocketBridge):
@@ -493,12 +533,6 @@ class SibeliusBridge(WebSocketBridge):
     async def add_note(
         self, pitch: int, duration: Duration, advance_cursor: bool = True
     ) -> NoteAdded:
-        length = Fraction(duration.numerator, duration.denominator) * WHOLE_NOTE
-        if length.denominator != 1 or length <= 0:
-            raise BridgeError(
-                f"Sibelius cannot write a note of {duration.numerator}/"
-                f"{duration.denominator} of a whole note."
-            )
         placed = await self._run(
             _NotePlaced,
             PluginMethod.ADD_NOTE,
@@ -506,7 +540,7 @@ class SibeliusBridge(WebSocketBridge):
             self._staff,
             self._position,
             pitch,
-            length.numerator,
+            _length(duration, "note"),
         )
         if advance_cursor:
             self._measure = placed.measure
@@ -681,7 +715,13 @@ class SibeliusBridge(WebSocketBridge):
         )
 
     async def add_line(
-        self, start_measure: int, end_measure: int, staff: int, line: LineType
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        line: LineType,
+        start_beat: int | None = None,
+        end_beat: int | None = None,
     ) -> LineAdded:
         reply = await self._run(
             _LineReply,
@@ -689,6 +729,8 @@ class SibeliusBridge(WebSocketBridge):
             start_measure,
             end_measure,
             staff,
+            start_beat or 0,
+            end_beat or 0,
             LINE_STYLES[line],
         )
         return LineAdded(
@@ -696,6 +738,8 @@ class SibeliusBridge(WebSocketBridge):
             start_measure=reply.start_measure,
             end_measure=reply.end_measure,
             staff=reply.staff,
+            start_beat=start_beat,
+            end_beat=end_beat,
         )
 
     async def add_text(self, text: str, style: TextStyle) -> TextAdded:
@@ -723,6 +767,151 @@ class SibeliusBridge(WebSocketBridge):
             CLEFS[clef],
         )
         return ClefSet(clef=clef, measure=position.measure, staff=position.staff)
+
+    # ── Rhythm and percussion notation ───────────────────────────────
+
+    async def go_to_beat(self, beat: int) -> CursorPosition:
+        placed = await self._run(
+            _NotePlaced,
+            PluginMethod.BEAT_TO_POSITION,
+            self._measure,
+            self._staff,
+            beat,
+        )
+        self._position = placed.position
+        return CursorPosition(measure=placed.measure, staff=placed.staff)
+
+    async def add_rest(
+        self, duration: Duration, advance_cursor: bool = True
+    ) -> RestAdded:
+        placed = await self._run(
+            _NotePlaced,
+            PluginMethod.ADD_REST,
+            self._measure,
+            self._staff,
+            self._position,
+            _length(duration, "rest"),
+        )
+        if advance_cursor:
+            self._measure = placed.measure
+            self._position = placed.position
+        return RestAdded(measure=self._measure, staff=self._staff, duration=duration)
+
+    async def add_tuplet(
+        self, pitches: list[int | None], actual: int, normal: int, unit: Duration
+    ) -> TupletAdded:
+        if len(pitches) != actual:
+            raise BridgeError(
+                f"A tuplet of {actual} needs {actual} pitches or rests, "
+                f"not {len(pitches)}."
+            )
+        placed = await self._run(
+            _TupletPlaced,
+            PluginMethod.ADD_TUPLET,
+            self._measure,
+            self._staff,
+            self._position,
+            [-1 if pitch is None else pitch for pitch in pitches],
+            actual,
+            normal,
+            _length(unit, "tuplet note"),
+        )
+        self._measure = placed.measure
+        self._position = placed.position
+        return TupletAdded(
+            measure=self._measure,
+            staff=self._staff,
+            actual=actual,
+            normal=normal,
+            unit=unit,
+            notes=placed.notes,
+        )
+
+    async def set_tremolo(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        kind: TremoloKind,
+        strokes: int,
+        beat: int | None,
+    ) -> TremoloSet:
+        if kind == "buzz":
+            strokes = BUZZ_ROLL
+        elif not 0 <= strokes <= MAX_TREMOLO_STROKES:
+            raise BridgeError(
+                f"Sibelius draws 0 to {MAX_TREMOLO_STROKES} tremolo strokes."
+            )
+        reply = await self._run(
+            _NotesChanged,
+            PluginMethod.SET_TREMOLO,
+            start_measure,
+            end_measure,
+            staff,
+            beat or 0,
+            kind == "double",
+            strokes,
+        )
+        return TremoloSet(
+            kind=kind,
+            strokes=strokes,
+            start_measure=start_measure,
+            end_measure=end_measure,
+            staff=staff,
+            beat=beat,
+            notes=reply.notes,
+        )
+
+    async def add_grace_notes(self, ornament: GraceOrnament) -> GraceNotesAdded:
+        count, slashed, length = GRACE_ORNAMENTS[ornament]
+        reply = await self._run(
+            _CountAt,
+            PluginMethod.ADD_GRACE_NOTES,
+            self._measure,
+            self._staff,
+            self._position,
+            count,
+            slashed,
+            length,
+        )
+        return GraceNotesAdded(
+            ornament=ornament,
+            measure=reply.measure,
+            staff=reply.staff,
+            notes=reply.notes,
+        )
+
+    async def add_sticking(self, sticking: list[str]) -> StickingAdded:
+        reply = await self._run(
+            _CountAt,
+            PluginMethod.ADD_STICKING,
+            self._measure,
+            self._staff,
+            self._position,
+            # A backslash starts a Sibelius formatting command.
+            [letter.replace("\\", "\\\\") for letter in sticking],
+        )
+        return StickingAdded(
+            sticking=sticking,
+            measure=reply.measure,
+            staff=reply.staff,
+            notes=reply.notes,
+        )
+
+
+def _length(duration: Duration, what: str) -> int:
+    """*duration* in Sibelius's units (1/256 of a quarter note).
+
+    Raises:
+        BridgeError: When it is not a whole number of units.
+    """
+    length = Fraction(duration.numerator, duration.denominator) * WHOLE_NOTE
+    if length.denominator != 1 or length <= 0:
+        raise BridgeError(
+            f"Sibelius cannot write a {what} of {duration.numerator}/"
+            f"{duration.denominator} of a whole note."
+        )
+    return length.numerator
 
 
 def _interval(semitones: int) -> tuple[int, int]:

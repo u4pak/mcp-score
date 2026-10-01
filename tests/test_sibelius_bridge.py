@@ -700,24 +700,26 @@ class TestSibeliusTranspose:
 
 class TestSibeliusNotationVocabulary:
     @pytest.mark.parametrize(
-        ("mapping", "names"),
+        ("mapping", "names", "aliases"),
         [
-            pytest.param(ARTICULATIONS, Articulation, id="articulations"),
-            pytest.param(NOTEHEADS, Notehead, id="noteheads"),
-            pytest.param(LINE_STYLES, LineType, id="lines"),
-            pytest.param(TEXT_STYLES, TextStyle, id="text-styles"),
-            pytest.param(CLEFS, Clef, id="clefs"),
+            pytest.param(ARTICULATIONS, Articulation, 0, id="articulations"),
+            pytest.param(NOTEHEADS, Notehead, 0, id="noteheads"),
+            # decrescendo and diminuendo are the same hairpin
+            pytest.param(LINE_STYLES, LineType, 1, id="lines"),
+            pytest.param(TEXT_STYLES, TextStyle, 0, id="text-styles"),
+            pytest.param(CLEFS, Clef, 0, id="clefs"),
         ],
     )
     def test_every_name_a_tool_accepts_has_a_sibelius_value(
-        self, mapping: dict[str, object], names: Any
+        self, mapping: dict[str, object], names: Any, aliases: int
     ) -> None:
         # Act
         accepted = set(get_args(names.__value__))
 
-        # Assert: no tool argument can reach the bridge without a mapping
+        # Assert: no tool argument can reach the bridge without a mapping,
+        # and no two names share a value unless one is a known alias
         assert set(mapping) == accepted
-        assert len(set(mapping.values())) == len(mapping)
+        assert len(set(mapping.values())) == len(mapping) - aliases
 
 
 class TestSibeliusNotation:
@@ -777,7 +779,7 @@ class TestSibeliusNotation:
 
         # Assert
         assert _plugin_calls(connection) == [
-            ("AddLine", [3, 6, 2, "line.staff.octava.minus8"])
+            ("AddLine", [3, 6, 2, 0, 0, "line.staff.octava.minus8"])
         ]
         assert (result.line, result.start_measure, result.end_measure) == (
             "ottava_bassa",
@@ -834,3 +836,172 @@ class TestSibeliusNotation:
         # Act / Assert
         with pytest.raises(BridgeError, match="Measure 40 out of range"):
             await bridge.add_line(38, 40, 0, "crescendo")
+
+
+# ── Rhythm and percussion notation ───────────────────────────────────
+
+
+class TestSibeliusPercussion:
+    @pytest.mark.anyio()
+    async def test_beat_moves_the_cursor_for_the_next_note(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            _at(2, 0),
+            plugin_reply({"measure": 2, "staff": 0, "position": 512}),
+            plugin_reply({"measure": 2, "staff": 0, "position": 576}),
+        )
+        await bridge.go_to_measure(2)
+
+        # Act
+        await bridge.go_to_beat(3)
+        await bridge.add_note(38, Duration(numerator=1, denominator=16))
+
+        # Assert
+        assert _plugin_calls(connection)[1:] == [
+            ("BeatToPosition", [2, 0, 3]),
+            ("AddNote", [2, 0, 512, 38, 64]),
+        ]
+
+    @pytest.mark.anyio()
+    async def test_rest_advances_the_cursor_like_a_note(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"measure": 1, "staff": 0, "position": 128}),
+            plugin_reply({"measure": 1, "staff": 0, "position": 256}),
+        )
+
+        # Act
+        rest = await bridge.add_rest(Duration(numerator=1, denominator=8))
+        await bridge.add_note(38, Duration(numerator=1, denominator=8))
+
+        # Assert
+        assert _plugin_calls(connection) == [
+            ("AddRest", [1, 0, 0, 128]),
+            ("AddNote", [1, 0, 128, 38, 128]),
+        ]
+        assert rest.duration == Duration(numerator=1, denominator=8)
+
+    @pytest.mark.anyio()
+    async def test_tuplet_sends_rests_as_negative_pitches(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"measure": 1, "staff": 0, "position": 256, "notes": 3})
+        )
+
+        # Act
+        result = await bridge.add_tuplet(
+            [60, None, 64], 3, 2, Duration(numerator=1, denominator=8)
+        )
+
+        # Assert
+        assert _plugin_calls(connection) == [
+            ("AddTuplet", [1, 0, 0, [60, -1, 64], 3, 2, 128])
+        ]
+        assert (result.measure, result.notes) == (1, 3)
+
+    @pytest.mark.anyio()
+    async def test_tuplet_with_wrong_number_of_pitches_is_refused(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge()
+
+        # Act / Assert
+        with pytest.raises(BridgeError, match="needs 5 pitches or rests, not 4"):
+            await bridge.add_tuplet(
+                [60, 60, 60, 60], 5, 4, Duration(numerator=1, denominator=16)
+            )
+        assert _plugin_calls(connection) == []
+
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize(
+        ("kind", "strokes", "between_notes", "sent_strokes"),
+        [
+            pytest.param("single", 3, False, 3, id="single"),
+            pytest.param("double", 2, True, 2, id="double"),
+            pytest.param("buzz", 3, False, -1, id="buzz-is-z-on-stem"),
+            pytest.param("single", 0, False, 0, id="remove"),
+        ],
+    )
+    async def test_tremolo_kinds(
+        self, kind: Any, strokes: int, between_notes: bool, sent_strokes: int
+    ) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(plugin_reply({"notes": 4}))
+
+        # Act
+        result = await bridge.set_tremolo(1, 2, 0, kind, strokes, 1)
+
+        # Assert
+        assert _plugin_calls(connection) == [
+            ("SetTremolo", [1, 2, 0, 1, between_notes, sent_strokes])
+        ]
+        assert (result.kind, result.strokes, result.notes) == (kind, sent_strokes, 4)
+
+    @pytest.mark.anyio()
+    async def test_tremolo_beyond_seven_strokes_is_refused(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge()
+
+        # Act / Assert
+        with pytest.raises(BridgeError, match="0 to 7 tremolo strokes"):
+            await bridge.set_tremolo(1, 1, 0, "single", 8, None)
+        assert _plugin_calls(connection) == []
+
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize(
+        ("ornament", "arguments"),
+        [
+            pytest.param("flam", [1, True, 128], id="flam"),
+            pytest.param("drag", [2, False, 64], id="drag"),
+            pytest.param("ruff", [3, False, 64], id="ruff"),
+        ],
+    )
+    async def test_grace_note_ornaments(
+        self, ornament: Any, arguments: list[Any]
+    ) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"measure": 1, "staff": 0, "notes": arguments[0]})
+        )
+
+        # Act
+        result = await bridge.add_grace_notes(ornament)
+
+        # Assert: count, slashed and length follow the cursor's position
+        assert _plugin_calls(connection) == [("AddGraceNotes", [1, 0, 0, *arguments])]
+        assert result.notes == arguments[0]
+
+    @pytest.mark.anyio()
+    async def test_sticking_reports_how_many_notes_got_a_letter(self) -> None:
+        # Arrange: only three notes left for four letters
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"measure": 1, "staff": 0, "notes": 3})
+        )
+
+        # Act
+        result = await bridge.add_sticking(["R", "L", "R", "R"])
+
+        # Assert
+        assert _plugin_calls(connection) == [
+            ("AddSticking", [1, 0, 0, ["R", "L", "R", "R"]])
+        ]
+        assert (result.sticking, result.notes) == (["R", "L", "R", "R"], 3)
+
+    @pytest.mark.anyio()
+    async def test_hairpin_between_beats(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            plugin_reply({"start_measure": 4, "end_measure": 5, "staff": 0})
+        )
+
+        # Act
+        result = await bridge.add_line(4, 5, 0, "decrescendo", 3, 1)
+
+        # Assert: decrescendo is Sibelius's diminuendo hairpin
+        assert _plugin_calls(connection) == [
+            ("AddLine", [4, 5, 0, 3, 1, "line.staff.hairpin.diminuendo"])
+        ]
+        assert (result.line, result.start_beat, result.end_beat) == (
+            "decrescendo",
+            3,
+            1,
+        )

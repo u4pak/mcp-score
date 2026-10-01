@@ -34,6 +34,7 @@ __all__ = [
     "ToolError",
     "ToolModule",
     "navigate",
+    "require_beat",
     "require_bridge",
     "require_measure",
     "require_measure_range",
@@ -95,6 +96,16 @@ def require_measure(measure: int, name: str = "measure") -> None:
         raise ToolError(f"{name} must be >= 1.")
 
 
+def require_beat(beat: int | None, name: str = "beat") -> None:
+    """Validate an optional 1-indexed beat.
+
+    Raises:
+        ToolError: When it is given and below 1.
+    """
+    if beat is not None and beat < 1:
+        raise ToolError(f"{name} must be >= 1.")
+
+
 def require_measure_range(start_measure: int, end_measure: int) -> None:
     """Validate an inclusive, 1-indexed measure range.
 
@@ -106,8 +117,13 @@ def require_measure_range(start_measure: int, end_measure: int) -> None:
         raise ToolError("end_measure must be >= start_measure.")
 
 
-async def navigate(bridge: ScoreBridge, measure: int, staff: int | None = None) -> None:
-    """Move the application's cursor to *measure* (and *staff*, if given).
+async def navigate(
+    bridge: ScoreBridge,
+    measure: int,
+    staff: int | None = None,
+    beat: int | None = None,
+) -> None:
+    """Move the application's cursor to *measure* (and *staff* and *beat*, if given).
 
     Raises:
         BridgeError: When the application refuses to move, so a command
@@ -116,3 +132,5 @@ async def navigate(bridge: ScoreBridge, measure: int, staff: int | None = None) 
     await bridge.go_to_measure(measure)
     if staff is not None:
         await bridge.go_to_staff(staff)
+    if beat is not None:
+        await bridge.go_to_beat(beat)

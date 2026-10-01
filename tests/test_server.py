@@ -55,6 +55,11 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "add_live_line",
         "add_live_text",
         "set_live_clef",
+        "add_live_rest",
+        "add_live_tuplet",
+        "set_live_tremolo",
+        "add_live_grace_notes",
+        "add_live_sticking",
         "undo_last_action",
         # generate
         "generate_score",

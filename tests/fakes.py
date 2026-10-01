@@ -30,6 +30,8 @@ from mcp_score.bridge.results import (
     CursorPosition,
     Duration,
     DynamicAdded,
+    GraceNotesAdded,
+    GraceOrnament,
     KeySignatureSet,
     LineAdded,
     LineType,
@@ -39,15 +41,20 @@ from mcp_score.bridge.results import (
     NoteheadSet,
     Part,
     RehearsalMarkAdded,
+    RestAdded,
     ScoreInfo,
     SelectedRange,
     SelectionProperties,
+    StickingAdded,
     TempoSet,
     TextAdded,
     TextStyle,
     TimeSignature,
     TimeSignatureSet,
     Transposed,
+    TremoloKind,
+    TremoloSet,
+    TupletAdded,
 )
 from mcp_score.context import AppState, ScoreContext
 
@@ -134,6 +141,27 @@ DEFAULT_REPLIES: dict[str, BaseModel] = {
     "add_line": LineAdded(line="slur", start_measure=1, end_measure=2, staff=0),
     "add_text": TextAdded(text="pizz.", style="technique", measure=1, staff=0),
     "set_clef": ClefSet(clef="bass", measure=1, staff=0),
+    "go_to_beat": _START,
+    "add_rest": RestAdded(measure=1, staff=0, duration=_QUARTER_NOTE),
+    "add_tuplet": TupletAdded(
+        measure=1,
+        staff=0,
+        actual=3,
+        normal=2,
+        unit=Duration(numerator=1, denominator=8),
+        notes=3,
+    ),
+    "set_tremolo": TremoloSet(
+        kind="single",
+        strokes=3,
+        start_measure=1,
+        end_measure=1,
+        staff=0,
+        beat=None,
+        notes=4,
+    ),
+    "add_grace_notes": GraceNotesAdded(ornament="flam", measure=1, staff=0, notes=1),
+    "add_sticking": StickingAdded(sticking=["R", "L"], measure=1, staff=0, notes=2),
 }
 """What a ``FakeBridge`` answers for each operation unless a test says otherwise."""
 
@@ -350,10 +378,23 @@ class FakeBridge(ScoreBridge):
         )
 
     async def add_line(
-        self, start_measure: int, end_measure: int, staff: int, line: LineType
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        line: LineType,
+        start_beat: int | None = None,
+        end_beat: int | None = None,
     ) -> LineAdded:
         return self._answer(
-            LineAdded, "add_line", start_measure, end_measure, staff, line
+            LineAdded,
+            "add_line",
+            start_measure,
+            end_measure,
+            staff,
+            line,
+            start_beat,
+            end_beat,
         )
 
     async def add_text(self, text: str, style: TextStyle) -> TextAdded:
@@ -361,6 +402,45 @@ class FakeBridge(ScoreBridge):
 
     async def set_clef(self, clef: Clef) -> ClefSet:
         return self._answer(ClefSet, "set_clef", clef)
+
+    async def go_to_beat(self, beat: int) -> CursorPosition:
+        return self._answer(CursorPosition, "go_to_beat", beat)
+
+    async def add_rest(
+        self, duration: Duration, advance_cursor: bool = True
+    ) -> RestAdded:
+        return self._answer(RestAdded, "add_rest", duration, advance_cursor)
+
+    async def add_tuplet(
+        self, pitches: list[int | None], actual: int, normal: int, unit: Duration
+    ) -> TupletAdded:
+        return self._answer(TupletAdded, "add_tuplet", pitches, actual, normal, unit)
+
+    async def set_tremolo(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        kind: TremoloKind,
+        strokes: int,
+        beat: int | None,
+    ) -> TremoloSet:
+        return self._answer(
+            TremoloSet,
+            "set_tremolo",
+            start_measure,
+            end_measure,
+            staff,
+            kind,
+            strokes,
+            beat,
+        )
+
+    async def add_grace_notes(self, ornament: GraceOrnament) -> GraceNotesAdded:
+        return self._answer(GraceNotesAdded, "add_grace_notes", ornament)
+
+    async def add_sticking(self, sticking: list[str]) -> StickingAdded:
+        return self._answer(StickingAdded, "add_sticking", sticking)
 
 
 # ── WebSocket doubles ────────────────────────────────────────────────

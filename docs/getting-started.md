@@ -121,6 +121,18 @@ Besides the tools that work with MuseScore, Sibelius can also take articulations
 
 > "Add a crescendo hairpin over measures 5-6 and write 'pizz.' at measure 7 of the cello."
 
+### Scoring percussion
+
+The Sibelius tools cover what a battery and front ensemble score needs. Notes, rests and tuplets go where the last one ended, or on a beat you name. Dynamics, text and hairpins can sit on any beat. Tremolos cover measured diddles, unmeasured rolls, buzz rolls and rolls between two mallet notes. Flams, drags and ruffs go before a note, and sticking goes under the notes. Accents, cross noteheads for rim shots and the percussion clef come from the tools above. On a percussion staff, a note's pitch picks the instrument through the staff's drum map. For example:
+
+> "In the snare part, measure 1: four sixteenths on beat 1, an eighth-note triplet on beat 2, then a quarter note with a flam and an accent on beat 3, and a quarter rest."
+
+> "Buzz roll the snare in measures 9-12 with a crescendo from mp on beat 1 of measure 9 to ff on beat 4 of measure 12."
+
+> "Write the sticking RLRR LRLL under measure 5 of the snare."
+
+> "Roll the marimba's half notes in measures 17-24 with double tremolos, and put an sfz on beat 1 of measure 25."
+
 ## Next steps
 
 - [Architecture](architecture.md) -- understand how mcp-score is structured

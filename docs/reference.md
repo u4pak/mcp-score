@@ -236,8 +236,9 @@ if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
 Dorico's Remote Control API triggers commands but cannot type into
 popovers or move the selection, so most of these tools work with
-MuseScore and Sibelius only. Articulations, noteheads, lines, staff text
-and clefs work with Sibelius only for now.
+MuseScore and Sibelius only. Articulations, noteheads, lines, staff text,
+clefs, rests, tuplets, tremolos, grace notes, sticking and placing things
+on a beat work with Sibelius only for now.
 
 ### `add_live_note`
 
@@ -247,13 +248,14 @@ Consecutive calls on the same measure append notes one after another,
 since the application advances its cursor after each note. Not
 available with Dorico.
 
-| Parameter     | Type  | Default    | Description                                                        |
-| ------------- | ----- | ---------- | ------------------------------------------------------------------ |
-| `measure`     | `int` | (required) | Measure number (1-indexed).                                        |
-| `pitch`       | `int` | (required) | MIDI pitch (60 = middle C).                                        |
-| `numerator`   | `int` | `1`        | Duration numerator (default 1, with denominator 4 = quarter note). |
-| `denominator` | `int` | `4`        | Duration denominator (default 4).                                  |
-| `staff`       | `int` | `0`        | Staff index (0-indexed, default: 0).                               |
+| Parameter     | Type          | Default    | Description                                                                                                            |
+| ------------- | ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`         | (required) | Measure number (1-indexed).                                                                                            |
+| `pitch`       | `int`         | (required) | MIDI pitch (60 = middle C). On a percussion staff the pitch picks the instrument, as the staff's drum map says.        |
+| `numerator`   | `int`         | `1`        | Duration numerator (default 1, with denominator 4 = quarter note).                                                     |
+| `denominator` | `int`         | `4`        | Duration denominator (default 4).                                                                                      |
+| `staff`       | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                                   |
+| `beat`        | `int \| None` | `None`     | Start on this beat (1-indexed, in the time signature's beat unit) instead of where the last note ended. Sibelius only. |
 
 **Returns** `NoteAdded`: A note was added; the position is where the cursor went afterwards.
 
@@ -309,13 +311,15 @@ Not available with Dorico.
 Add a dynamic marking to a measure in the live score.
 
 Not available with Dorico. Sibelius writes dynamics spelled with the
-letters p, m, f, r, s, z and n.
+letters p, m, f, r, s, z and n, so "fp", "sfz", "rfz" and "n"
+(niente) work too.
 
-| Parameter | Type  | Default    | Description                                              |
-| --------- | ----- | ---------- | -------------------------------------------------------- |
-| `measure` | `int` | (required) | Measure number (1-indexed).                              |
-| `dynamic` | `str` | (required) | Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz". |
-| `staff`   | `int` | `0`        | Staff index (0-indexed, default: 0).                     |
+| Parameter | Type          | Default    | Description                                                                                                              |
+| --------- | ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `measure` | `int`         | (required) | Measure number (1-indexed).                                                                                              |
+| `dynamic` | `str`         | (required) | Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz".                                                                 |
+| `staff`   | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                                     |
+| `beat`    | `int \| None` | `None`     | Place it on this beat (1-indexed, in the time signature's beat unit) instead of the start of the measure. Sibelius only. |
 
 **Returns** `DynamicAdded`.
 
@@ -495,26 +499,33 @@ one. Sibelius only for now.
 
 ### `add_live_line`
 
-Add a line from the start of one measure to the end of another.
+Add a line from one measure to another in the live score.
 
-Slurs, hairpins, trills, octave lines, pedal lines and glissandi.
-Sibelius only for now.
+Slurs, hairpins (crescendo, and diminuendo or decrescendo, which are
+the same), trills, octave lines, pedal lines and glissandi. Without
+beats the line runs from the start of the first measure to the end of
+the last; with them, a hairpin can swell over a single beat. Sibelius
+only for now.
 
-| Parameter       | Type       | Default    | Description                                        |
-| --------------- | ---------- | ---------- | -------------------------------------------------- |
-| `start_measure` | `int`      | (required) | Measure the line starts at (1-indexed).            |
-| `end_measure`   | `int`      | (required) | Measure the line ends with (inclusive, 1-indexed). |
-| `line`          | `LineType` | (required) | The kind of line.                                  |
-| `staff`         | `int`      | `0`        | Staff index (0-indexed, default: 0).               |
+| Parameter       | Type          | Default    | Description                                                                                                             |
+| --------------- | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`         | (required) | Measure the line starts in (1-indexed).                                                                                 |
+| `end_measure`   | `int`         | (required) | Measure the line ends in (inclusive, 1-indexed).                                                                        |
+| `line`          | `LineType`    | (required) | The kind of line.                                                                                                       |
+| `staff`         | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                                    |
+| `start_beat`    | `int \| None` | `None`     | Start on this beat of the first measure (1-indexed, in the time signature's beat unit). Omit to start with the measure. |
+| `end_beat`      | `int \| None` | `None`     | End at the end of this beat of the last measure. Omit to end with the measure.                                          |
 
 **Returns** `LineAdded`.
 
-| Field           | Type       | Description |
-| --------------- | ---------- | ----------- |
-| `line`          | `LineType` |             |
-| `start_measure` | `int`      |             |
-| `end_measure`   | `int`      |             |
-| `staff`         | `int`      |             |
+| Field           | Type          | Description                                                        |
+| --------------- | ------------- | ------------------------------------------------------------------ |
+| `line`          | `LineType`    |                                                                    |
+| `start_measure` | `int`         |                                                                    |
+| `end_measure`   | `int`         |                                                                    |
+| `staff`         | `int`         |                                                                    |
+| `start_beat`    | `int \| None` | The beat the line starts on, or None for the start of the measure. |
+| `end_beat`      | `int \| None` | The beat the line ends with, or None for the end of the measure.   |
 
 ### `add_live_text`
 
@@ -524,12 +535,13 @@ Technique text for playing instructions ("pizz.", "con sord."),
 expression text for character ("dolce", "espress."), or plain or boxed
 text. Sibelius only for now.
 
-| Parameter | Type        | Default       | Description                                                 |
-| --------- | ----------- | ------------- | ----------------------------------------------------------- |
-| `measure` | `int`       | (required)    | Measure number (1-indexed).                                 |
-| `text`    | `str`       | (required)    | The text to write.                                          |
-| `style`   | `TextStyle` | `"technique"` | technique, expression, plain or boxed (default: technique). |
-| `staff`   | `int`       | `0`           | Staff index (0-indexed, default: 0).                        |
+| Parameter | Type          | Default       | Description                                                                                               |
+| --------- | ------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
+| `measure` | `int`         | (required)    | Measure number (1-indexed).                                                                               |
+| `text`    | `str`         | (required)    | The text to write.                                                                                        |
+| `style`   | `TextStyle`   | `"technique"` | technique, expression, plain or boxed (default: technique).                                               |
+| `staff`   | `int`         | `0`           | Staff index (0-indexed, default: 0).                                                                      |
+| `beat`    | `int \| None` | `None`        | Place it on this beat (1-indexed, in the time signature's beat unit) instead of the start of the measure. |
 
 **Returns** `TextAdded`.
 
@@ -559,6 +571,141 @@ Sibelius only for now.
 | `clef`    | `Clef` |             |
 | `measure` | `int`  |             |
 | `staff`   | `int`  |             |
+
+### `add_live_rest`
+
+Add a rest in the live score, where the last note or rest ended.
+
+Use it between add_live_note calls to write rhythms with rests; the
+cursor advances past the rest. Sibelius only for now.
+
+| Parameter     | Type          | Default    | Description                                                                                             |
+| ------------- | ------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`         | (required) | Measure number (1-indexed).                                                                             |
+| `numerator`   | `int`         | `1`        | Duration numerator (default 1, with denominator 4 = quarter rest).                                      |
+| `denominator` | `int`         | `4`        | Duration denominator (default 4).                                                                       |
+| `staff`       | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                    |
+| `beat`        | `int \| None` | `None`     | Start on this beat (1-indexed, in the time signature's beat unit) instead of where the last note ended. |
+
+**Returns** `RestAdded`: A rest was added; the position is where the cursor went afterwards.
+
+| Field      | Type       | Description                 |
+| ---------- | ---------- | --------------------------- |
+| `measure`  | `int`      | Measure number (1-indexed). |
+| `staff`    | `int`      | Staff index (0-indexed).    |
+| `duration` | `Duration` |                             |
+
+### `add_live_tuplet`
+
+Add a tuplet (triplet, sextuplet, quintuplet...) in the live score.
+
+`actual` notes of the given value take the time of `normal` of them,
+starting where the last note ended; the cursor advances past the
+tuplet. The defaults make an eighth-note triplet. Sibelius only for
+now.
+
+| Parameter     | Type                | Default    | Description                                                                                             |
+| ------------- | ------------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`               | (required) | Measure number (1-indexed).                                                                             |
+| `pitches`     | `list[int \| None]` | (required) | One MIDI pitch per note, or null for a rest; exactly `actual` of them.                                  |
+| `actual`      | `int`               | `3`        | Notes in the tuplet (3 for a triplet, 6 for a sextuplet).                                               |
+| `normal`      | `int`               | `2`        | Notes of the same value it takes the time of (2 for a triplet, 4 for a sextuplet).                      |
+| `numerator`   | `int`               | `1`        | Note value numerator (default 1).                                                                       |
+| `denominator` | `int`               | `8`        | Note value denominator (default 8: eighth notes).                                                       |
+| `staff`       | `int`               | `0`        | Staff index (0-indexed, default: 0).                                                                    |
+| `beat`        | `int \| None`       | `None`     | Start on this beat (1-indexed, in the time signature's beat unit) instead of where the last note ended. |
+
+**Returns** `TupletAdded`: A tuplet was filled; the position is where the cursor went afterwards.
+
+| Field     | Type       | Description                                                            |
+| --------- | ---------- | ---------------------------------------------------------------------- |
+| `measure` | `int`      | Measure number (1-indexed).                                            |
+| `staff`   | `int`      | Staff index (0-indexed).                                               |
+| `actual`  | `int`      | Notes in the tuplet (3 in a triplet).                                  |
+| `normal`  | `int`      | Notes of the same value the tuplet takes the time of (2 in a triplet). |
+| `unit`    | `Duration` | The value of each note in the tuplet.                                  |
+| `notes`   | `int`      | How many notes and rests were written.                                 |
+
+### `set_live_tremolo`
+
+Add tremolos (rolls) to the notes of a passage in the live score.
+
+"single" puts strokes on each note's stem (three for an unmeasured
+roll, fewer for measured diddles), "buzz" a z on the stem for a buzz
+roll, and "double" strokes between each note and the next, for mallet
+and timpani rolls between two pitches (the two notes need the same
+length). strokes 0 removes tremolos. Sibelius only for now.
+
+| Parameter       | Type          | Default    | Description                                                                                           |
+| --------------- | ------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`         | (required) | First measure (1-indexed).                                                                            |
+| `end_measure`   | `int`         | (required) | Last measure (inclusive, 1-indexed).                                                                  |
+| `kind`          | `TremoloKind` | `"single"` | single, double or buzz (default: single).                                                             |
+| `strokes`       | `int`         | `3`        | Tremolo strokes, 0 to 7 (default 3); ignored for buzz.                                                |
+| `staff`         | `int`         | `0`        | Staff index (0-indexed, default: 0).                                                                  |
+| `beat`          | `int \| None` | `None`     | Only notes starting on this beat (1-indexed, in the time signature's beat unit). Omit for every note. |
+
+**Returns** `TremoloSet`.
+
+| Field           | Type          | Description                                                 |
+| --------------- | ------------- | ----------------------------------------------------------- |
+| `kind`          | `TremoloKind` |                                                             |
+| `strokes`       | `int`         | Tremolo strokes (0 removes them); -1 for a buzz roll.       |
+| `start_measure` | `int`         |                                                             |
+| `end_measure`   | `int`         |                                                             |
+| `staff`         | `int`         |                                                             |
+| `beat`          | `int \| None` | The beat the change was limited to, or None for every note. |
+| `notes`         | `int`         | How many notes and chords were changed.                     |
+
+### `add_live_grace_notes`
+
+Add a flam, drag or ruff before a note in the live score.
+
+A flam is one slashed eighth-note grace note, a drag two and a ruff
+three sixteenth-note grace notes, all on the note's line. The note
+must already be there. Sibelius only for now.
+
+| Parameter  | Type            | Default    | Description                                                                            |
+| ---------- | --------------- | ---------- | -------------------------------------------------------------------------------------- |
+| `measure`  | `int`           | (required) | Measure number (1-indexed).                                                            |
+| `ornament` | `GraceOrnament` | (required) | flam, drag or ruff.                                                                    |
+| `beat`     | `int`           | `1`        | The beat the note starts on (1-indexed, in the time signature's beat unit; default 1). |
+| `staff`    | `int`           | `0`        | Staff index (0-indexed, default: 0).                                                   |
+
+**Returns** `GraceNotesAdded`.
+
+| Field      | Type            | Description                      |
+| ---------- | --------------- | -------------------------------- |
+| `ornament` | `GraceOrnament` |                                  |
+| `measure`  | `int`           |                                  |
+| `staff`    | `int`           |                                  |
+| `notes`    | `int`           | How many grace notes were added. |
+
+### `add_live_sticking`
+
+Write sticking (R, L...) under the notes of the live score.
+
+One letter or group per note, from the start of the measure (or
+`beat`) on, continuing into the next measures until the sticking runs
+out. Separate groups with spaces ("R L R R L L", or "RH LH"); without
+spaces each character is one note ("RLRRLRLL"). Sibelius writes it as
+lyrics, the usual way to engrave sticking. Sibelius only for now.
+
+| Parameter  | Type          | Default    | Description                                                                       |
+| ---------- | ------------- | ---------- | --------------------------------------------------------------------------------- |
+| `measure`  | `int`         | (required) | Measure number (1-indexed).                                                       |
+| `sticking` | `str`         | (required) | The sticking, as described above.                                                 |
+| `staff`    | `int`         | `0`        | Staff index (0-indexed, default: 0).                                              |
+| `beat`     | `int \| None` | `None`     | Start under the note on this beat (1-indexed, in the time signature's beat unit). |
+
+**Returns** `StickingAdded`.
+
+| Field      | Type        | Description                                                             |
+| ---------- | ----------- | ----------------------------------------------------------------------- |
+| `sticking` | `list[str]` | The letters, one per note, as written under the notes.                  |
+| `measure`  | `int`       |                                                                         |
+| `staff`    | `int`       |                                                                         |
+| `notes`    | `int`       | How many notes got a letter; fewer than the letters when notes ran out. |
 
 ### `undo_last_action`
 
@@ -725,6 +872,11 @@ What sits at the cursor: a chord, a rest, a single note or something else.
 | `tpc`      | `int \| None`        | Tonal pitch class of a single note.                                     |
 | `name`     | `str \| None`        | Name of a single note.                                                  |
 
+### `GraceOrnament`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
 ### `LineType`
 
 | Field | Type | Description |
@@ -769,6 +921,11 @@ What sits at the cursor: a chord, a rest, a single note or something else.
 | ------------- | ----- | ----------- |
 | `numerator`   | `int` |             |
 | `denominator` | `int` |             |
+
+### `TremoloKind`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
 
 ## CLI
 

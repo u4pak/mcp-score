@@ -5,8 +5,9 @@ if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
 Dorico's Remote Control API triggers commands but cannot type into
 popovers or move the selection, so most of these tools work with
-MuseScore and Sibelius only. Articulations, noteheads, lines, staff text
-and clefs work with Sibelius only for now.
+MuseScore and Sibelius only. Articulations, noteheads, lines, staff text,
+clefs, rests, tuplets, tremolos, grace notes, sticking and placing things
+on a beat work with Sibelius only for now.
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ from mcp_score.bridge.results import (
     CursorPosition,
     Duration,
     DynamicAdded,
+    GraceNotesAdded,
+    GraceOrnament,
     KeySignatureSet,
     LineAdded,
     LineType,
@@ -31,16 +34,22 @@ from mcp_score.bridge.results import (
     Notehead,
     NoteheadSet,
     RehearsalMarkAdded,
+    RestAdded,
+    StickingAdded,
     TempoSet,
     TextAdded,
     TextStyle,
     TimeSignatureSet,
     Transposed,
+    TremoloKind,
+    TremoloSet,
+    TupletAdded,
 )
 from mcp_score.context import ScoreContext
 from mcp_score.tools import (
     ToolError,
     navigate,
+    require_beat,
     require_bridge,
     require_measure,
     require_measure_range,
@@ -56,6 +65,16 @@ MIN_MIDI_PITCH = 0
 MAX_MIDI_PITCH = 127
 
 
+def _require_pitch(pitch: int) -> None:
+    if not MIN_MIDI_PITCH <= pitch <= MAX_MIDI_PITCH:
+        raise ToolError(f"pitch must be between {MIN_MIDI_PITCH} and {MAX_MIDI_PITCH}.")
+
+
+def _require_duration(numerator: int, denominator: int) -> None:
+    if numerator < 1 or denominator < 1:
+        raise ToolError("numerator and denominator must be >= 1.")
+
+
 @score_tool
 async def add_live_note(
     context: ScoreContext,
@@ -64,6 +83,7 @@ async def add_live_note(
     numerator: int = 1,
     denominator: int = 4,
     staff: int = 0,
+    beat: int | None = None,
 ) -> NoteAdded:
     """Add a note at the start of a measure in the live score.
 
@@ -73,18 +93,20 @@ async def add_live_note(
 
     Args:
         measure: Measure number (1-indexed).
-        pitch: MIDI pitch (60 = middle C).
+        pitch: MIDI pitch (60 = middle C). On a percussion staff the pitch
+            picks the instrument, as the staff's drum map says.
         numerator: Duration numerator (default 1, with denominator 4 = quarter note).
         denominator: Duration denominator (default 4).
         staff: Staff index (0-indexed, default: 0).
+        beat: Start on this beat (1-indexed, in the time signature's beat
+            unit) instead of where the last note ended. Sibelius only.
     """
     bridge = require_bridge(context)
     require_measure(measure)
-    if not MIN_MIDI_PITCH <= pitch <= MAX_MIDI_PITCH:
-        raise ToolError(f"pitch must be between {MIN_MIDI_PITCH} and {MAX_MIDI_PITCH}.")
-    if numerator < 1 or denominator < 1:
-        raise ToolError("numerator and denominator must be >= 1.")
-    await navigate(bridge, measure, staff)
+    _require_pitch(pitch)
+    _require_duration(numerator, denominator)
+    require_beat(beat)
+    await navigate(bridge, measure, staff, beat)
     return await bridge.add_note(
         pitch, Duration(numerator=numerator, denominator=denominator)
     )
@@ -131,21 +153,29 @@ async def add_live_chord_symbol(
 
 @score_tool
 async def add_live_dynamic(
-    context: ScoreContext, measure: int, dynamic: str, staff: int = 0
+    context: ScoreContext,
+    measure: int,
+    dynamic: str,
+    staff: int = 0,
+    beat: int | None = None,
 ) -> DynamicAdded:
     """Add a dynamic marking to a measure in the live score.
 
     Not available with Dorico. Sibelius writes dynamics spelled with the
-    letters p, m, f, r, s, z and n.
+    letters p, m, f, r, s, z and n, so "fp", "sfz", "rfz" and "n"
+    (niente) work too.
 
     Args:
         measure: Measure number (1-indexed).
         dynamic: Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz".
         staff: Staff index (0-indexed, default: 0).
+        beat: Place it on this beat (1-indexed, in the time signature's
+            beat unit) instead of the start of the measure. Sibelius only.
     """
     bridge = require_bridge(context)
     require_measure(measure)
-    await navigate(bridge, measure, staff)
+    require_beat(beat)
+    await navigate(bridge, measure, staff, beat)
     return await bridge.add_dynamic(dynamic)
 
 
@@ -285,11 +315,6 @@ async def undo_last_action(context: ScoreContext) -> CursorPosition:
     return await require_bridge(context).undo()
 
 
-def _require_beat(beat: int | None) -> None:
-    if beat is not None and beat < 1:
-        raise ToolError("beat must be >= 1.")
-
-
 @score_tool
 async def set_live_articulation(
     context: ScoreContext,
@@ -317,7 +342,7 @@ async def set_live_articulation(
     """
     bridge = require_bridge(context)
     require_measure_range(start_measure, end_measure)
-    _require_beat(beat)
+    require_beat(beat)
     return await bridge.set_articulation(
         start_measure, end_measure, staff, articulation, beat, remove
     )
@@ -349,7 +374,7 @@ async def set_live_notehead(
     """
     bridge = require_bridge(context)
     require_measure_range(start_measure, end_measure)
-    _require_beat(beat)
+    require_beat(beat)
     return await bridge.set_notehead(start_measure, end_measure, staff, notehead, beat)
 
 
@@ -360,21 +385,41 @@ async def add_live_line(
     end_measure: int,
     line: LineType,
     staff: int = 0,
+    start_beat: int | None = None,
+    end_beat: int | None = None,
 ) -> LineAdded:
-    """Add a line from the start of one measure to the end of another.
+    """Add a line from one measure to another in the live score.
 
-    Slurs, hairpins, trills, octave lines, pedal lines and glissandi.
-    Sibelius only for now.
+    Slurs, hairpins (crescendo, and diminuendo or decrescendo, which are
+    the same), trills, octave lines, pedal lines and glissandi. Without
+    beats the line runs from the start of the first measure to the end of
+    the last; with them, a hairpin can swell over a single beat. Sibelius
+    only for now.
 
     Args:
-        start_measure: Measure the line starts at (1-indexed).
-        end_measure: Measure the line ends with (inclusive, 1-indexed).
+        start_measure: Measure the line starts in (1-indexed).
+        end_measure: Measure the line ends in (inclusive, 1-indexed).
         line: The kind of line.
         staff: Staff index (0-indexed, default: 0).
+        start_beat: Start on this beat of the first measure (1-indexed, in
+            the time signature's beat unit). Omit to start with the measure.
+        end_beat: End at the end of this beat of the last measure. Omit to
+            end with the measure.
     """
     bridge = require_bridge(context)
     require_measure_range(start_measure, end_measure)
-    return await bridge.add_line(start_measure, end_measure, staff, line)
+    require_beat(start_beat, "start_beat")
+    require_beat(end_beat, "end_beat")
+    if (
+        start_measure == end_measure
+        and start_beat is not None
+        and end_beat is not None
+        and end_beat < start_beat
+    ):
+        raise ToolError("end_beat must be >= start_beat within one measure.")
+    return await bridge.add_line(
+        start_measure, end_measure, staff, line, start_beat, end_beat
+    )
 
 
 @score_tool
@@ -384,6 +429,7 @@ async def add_live_text(
     text: str,
     style: TextStyle = "technique",
     staff: int = 0,
+    beat: int | None = None,
 ) -> TextAdded:
     """Add staff text to a measure in the live score.
 
@@ -396,12 +442,15 @@ async def add_live_text(
         text: The text to write.
         style: technique, expression, plain or boxed (default: technique).
         staff: Staff index (0-indexed, default: 0).
+        beat: Place it on this beat (1-indexed, in the time signature's
+            beat unit) instead of the start of the measure.
     """
     bridge = require_bridge(context)
     require_measure(measure)
     if not text.strip():
         raise ToolError("text must not be empty.")
-    await navigate(bridge, measure, staff)
+    require_beat(beat)
+    await navigate(bridge, measure, staff, beat)
     return await bridge.add_text(text, style)
 
 
@@ -424,6 +473,183 @@ async def set_live_clef(
     return await bridge.set_clef(clef)
 
 
+@score_tool
+async def add_live_rest(
+    context: ScoreContext,
+    measure: int,
+    numerator: int = 1,
+    denominator: int = 4,
+    staff: int = 0,
+    beat: int | None = None,
+) -> RestAdded:
+    """Add a rest in the live score, where the last note or rest ended.
+
+    Use it between add_live_note calls to write rhythms with rests; the
+    cursor advances past the rest. Sibelius only for now.
+
+    Args:
+        measure: Measure number (1-indexed).
+        numerator: Duration numerator (default 1, with denominator 4 = quarter rest).
+        denominator: Duration denominator (default 4).
+        staff: Staff index (0-indexed, default: 0).
+        beat: Start on this beat (1-indexed, in the time signature's beat
+            unit) instead of where the last note ended.
+    """
+    bridge = require_bridge(context)
+    require_measure(measure)
+    _require_duration(numerator, denominator)
+    require_beat(beat)
+    await navigate(bridge, measure, staff, beat)
+    return await bridge.add_rest(Duration(numerator=numerator, denominator=denominator))
+
+
+@score_tool
+async def add_live_tuplet(
+    context: ScoreContext,
+    measure: int,
+    pitches: list[int | None],
+    actual: int = 3,
+    normal: int = 2,
+    numerator: int = 1,
+    denominator: int = 8,
+    staff: int = 0,
+    beat: int | None = None,
+) -> TupletAdded:
+    """Add a tuplet (triplet, sextuplet, quintuplet...) in the live score.
+
+    `actual` notes of the given value take the time of `normal` of them,
+    starting where the last note ended; the cursor advances past the
+    tuplet. The defaults make an eighth-note triplet. Sibelius only for
+    now.
+
+    Args:
+        measure: Measure number (1-indexed).
+        pitches: One MIDI pitch per note, or null for a rest; exactly
+            `actual` of them.
+        actual: Notes in the tuplet (3 for a triplet, 6 for a sextuplet).
+        normal: Notes of the same value it takes the time of (2 for a
+            triplet, 4 for a sextuplet).
+        numerator: Note value numerator (default 1).
+        denominator: Note value denominator (default 8: eighth notes).
+        staff: Staff index (0-indexed, default: 0).
+        beat: Start on this beat (1-indexed, in the time signature's beat
+            unit) instead of where the last note ended.
+    """
+    bridge = require_bridge(context)
+    require_measure(measure)
+    if actual < 1 or normal < 1:
+        raise ToolError("actual and normal must be >= 1.")
+    if len(pitches) != actual:
+        raise ToolError(f"pitches must hold {actual} pitches or nulls, one per note.")
+    for pitch in pitches:
+        if pitch is not None:
+            _require_pitch(pitch)
+    _require_duration(numerator, denominator)
+    require_beat(beat)
+    await navigate(bridge, measure, staff, beat)
+    return await bridge.add_tuplet(
+        pitches, actual, normal, Duration(numerator=numerator, denominator=denominator)
+    )
+
+
+@score_tool
+async def set_live_tremolo(
+    context: ScoreContext,
+    start_measure: int,
+    end_measure: int,
+    kind: TremoloKind = "single",
+    strokes: int = 3,
+    staff: int = 0,
+    beat: int | None = None,
+) -> TremoloSet:
+    """Add tremolos (rolls) to the notes of a passage in the live score.
+
+    "single" puts strokes on each note's stem (three for an unmeasured
+    roll, fewer for measured diddles), "buzz" a z on the stem for a buzz
+    roll, and "double" strokes between each note and the next, for mallet
+    and timpani rolls between two pitches (the two notes need the same
+    length). strokes 0 removes tremolos. Sibelius only for now.
+
+    Args:
+        start_measure: First measure (1-indexed).
+        end_measure: Last measure (inclusive, 1-indexed).
+        kind: single, double or buzz (default: single).
+        strokes: Tremolo strokes, 0 to 7 (default 3); ignored for buzz.
+        staff: Staff index (0-indexed, default: 0).
+        beat: Only notes starting on this beat (1-indexed, in the time
+            signature's beat unit). Omit for every note.
+    """
+    bridge = require_bridge(context)
+    require_measure_range(start_measure, end_measure)
+    if strokes < 0:
+        raise ToolError("strokes must be >= 0.")
+    require_beat(beat)
+    return await bridge.set_tremolo(
+        start_measure, end_measure, staff, kind, strokes, beat
+    )
+
+
+@score_tool
+async def add_live_grace_notes(
+    context: ScoreContext,
+    measure: int,
+    ornament: GraceOrnament,
+    beat: int = 1,
+    staff: int = 0,
+) -> GraceNotesAdded:
+    """Add a flam, drag or ruff before a note in the live score.
+
+    A flam is one slashed eighth-note grace note, a drag two and a ruff
+    three sixteenth-note grace notes, all on the note's line. The note
+    must already be there. Sibelius only for now.
+
+    Args:
+        measure: Measure number (1-indexed).
+        ornament: flam, drag or ruff.
+        beat: The beat the note starts on (1-indexed, in the time
+            signature's beat unit; default 1).
+        staff: Staff index (0-indexed, default: 0).
+    """
+    bridge = require_bridge(context)
+    require_measure(measure)
+    require_beat(beat)
+    await navigate(bridge, measure, staff, beat)
+    return await bridge.add_grace_notes(ornament)
+
+
+@score_tool
+async def add_live_sticking(
+    context: ScoreContext,
+    measure: int,
+    sticking: str,
+    staff: int = 0,
+    beat: int | None = None,
+) -> StickingAdded:
+    """Write sticking (R, L...) under the notes of the live score.
+
+    One letter or group per note, from the start of the measure (or
+    `beat`) on, continuing into the next measures until the sticking runs
+    out. Separate groups with spaces ("R L R R L L", or "RH LH"); without
+    spaces each character is one note ("RLRRLRLL"). Sibelius writes it as
+    lyrics, the usual way to engrave sticking. Sibelius only for now.
+
+    Args:
+        measure: Measure number (1-indexed).
+        sticking: The sticking, as described above.
+        staff: Staff index (0-indexed, default: 0).
+        beat: Start under the note on this beat (1-indexed, in the time
+            signature's beat unit).
+    """
+    bridge = require_bridge(context)
+    require_measure(measure)
+    letters = sticking.split() if " " in sticking.strip() else list(sticking.strip())
+    if not letters:
+        raise ToolError("sticking must not be empty.")
+    require_beat(beat)
+    await navigate(bridge, measure, staff, beat)
+    return await bridge.add_sticking(letters)
+
+
 def register(server: MCPServer) -> None:
     for tool in (
         add_live_note,
@@ -441,6 +667,11 @@ def register(server: MCPServer) -> None:
         add_live_line,
         add_live_text,
         set_live_clef,
+        add_live_rest,
+        add_live_tuplet,
+        set_live_tremolo,
+        add_live_grace_notes,
+        add_live_sticking,
         undo_last_action,
     ):
         server.tool()(tool)

@@ -25,6 +25,8 @@ if TYPE_CHECKING:
         CursorPosition,
         Duration,
         DynamicAdded,
+        GraceNotesAdded,
+        GraceOrnament,
         KeySignatureSet,
         LineAdded,
         LineType,
@@ -33,14 +35,19 @@ if TYPE_CHECKING:
         Notehead,
         NoteheadSet,
         RehearsalMarkAdded,
+        RestAdded,
         ScoreInfo,
         SelectedRange,
         SelectionProperties,
+        StickingAdded,
         TempoSet,
         TextAdded,
         TextStyle,
         TimeSignatureSet,
         Transposed,
+        TremoloKind,
+        TremoloSet,
+        TupletAdded,
     )
 
 __all__ = ["BridgeError", "CommandResult", "ScoreBridge"]
@@ -226,9 +233,19 @@ class ScoreBridge(ABC):
         raise self._not_supported("change noteheads")
 
     async def add_line(
-        self, start_measure: int, end_measure: int, staff: int, line: LineType
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        line: LineType,
+        start_beat: int | None = None,
+        end_beat: int | None = None,
     ) -> LineAdded:
-        """Add a line from the start of one measure to the end of another."""
+        """Add a line from one measure to another.
+
+        It starts on *start_beat* of the first measure (its start when
+        None) and ends with *end_beat* of the last (its end when None).
+        """
         raise self._not_supported("add lines")
 
     async def add_text(self, text: str, style: TextStyle) -> TextAdded:
@@ -238,6 +255,48 @@ class ScoreBridge(ABC):
     async def set_clef(self, clef: Clef) -> ClefSet:
         """Change the clef at the current position."""
         raise self._not_supported("change clefs")
+
+    # ── Rhythm and percussion notation ───────────────────────────────
+
+    async def go_to_beat(self, beat: int) -> CursorPosition:
+        """Move to a beat of the current measure (1-indexed, in its beat unit)."""
+        raise self._not_supported("move to a beat")
+
+    async def add_rest(
+        self, duration: Duration, advance_cursor: bool = True
+    ) -> RestAdded:
+        """Add a rest at the current position."""
+        raise self._not_supported("add rests")
+
+    async def add_tuplet(
+        self, pitches: list[int | None], actual: int, normal: int, unit: Duration
+    ) -> TupletAdded:
+        """Add a tuplet of *unit* notes at the current position.
+
+        *actual* notes take the time of *normal*; each pitch is a MIDI
+        pitch or None for a rest, and there must be *actual* of them.
+        """
+        raise self._not_supported("add tuplets")
+
+    async def set_tremolo(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        kind: TremoloKind,
+        strokes: int,
+        beat: int | None,
+    ) -> TremoloSet:
+        """Set tremolo strokes (0 removes them) on the notes of a passage."""
+        raise self._not_supported("add tremolos")
+
+    async def add_grace_notes(self, ornament: GraceOrnament) -> GraceNotesAdded:
+        """Add a flam, drag or ruff before the note at the current position."""
+        raise self._not_supported("add grace notes")
+
+    async def add_sticking(self, sticking: list[str]) -> StickingAdded:
+        """Write one sticking letter under each note from the current position."""
+        raise self._not_supported("add sticking")
 
     def _not_supported(self, operation: str) -> BridgeError:
         return BridgeError(

@@ -113,7 +113,7 @@ Sibelius 2024.3+ serves Sibelius Connect, a WebSocket API on port 1898 enabled o
 
 After the handshake there are two messages. `invokeCommands` runs Sibelius command IDs (the menu commands listed in chapter 5 of the guide) on the current selection; they take no parameters. `invokePlugin` calls a method of a ManuScript plug-in with arguments and returns its result as JSON.
 
-Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars, transposing, and articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal, glissandi), staff text and clefs. Those last five are `ScoreBridge` operations that refuse by default, so the MuseScore and Dorico bridges report them as not supported yet. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
+Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars, transposing, articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal, glissandi), staff text, clefs, rests, tuplets, tremolos and buzz rolls, grace notes (flams, drags, ruffs), sticking, and moving the cursor to a beat. The operations from articulations on are `ScoreBridge` methods that refuse by default, so the MuseScore and Dorico bridges report them as not supported yet. ManuScript has no call that adds a rest, so the plug-in adds a note and deletes it, which leaves a rest of the same length; and since it may not add to a bar while iterating over it, it collects the notes for sticking before writing the letters. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
 
 Sibelius support is experimental: the bridge and plug-in follow the ManuScript Language Guide but have not been run against a real Sibelius.
 
@@ -123,18 +123,19 @@ Dorico's Remote Control WebSocket API is fundamentally a **command execution and
 
 ### What the WebSocket API can do
 
-| Capability                                                     |         MuseScore          |  Dorico (experimental)   |      Sibelius (experimental)      |
-| -------------------------------------------------------------- | :------------------------: | :----------------------: | :-------------------------------: |
-| Execute commands (undo, navigation, barlines, rehearsal marks) |            Yes             |           Yes            |                Yes                |
-| Get application status                                         |            Yes             |           Yes            |       Responsiveness (ping)       |
-| Get selection properties                                       |            Yes             |           Yes            |    Yes (cursor, as MuseScore)     |
-| Set barlines                                                   |            Yes             |           Yes            | Yes (not dotted, endStartRepeat)  |
-| Add rehearsal marks                                            |   Yes (with custom text)   | Yes (auto-numbered only) | Yes (letters or numbers as given) |
-| Navigate to measure and staff                                  |            Yes             |       Measure only       |   Yes (via ManuScript plug-in)    |
-| Notes, chord symbols, dynamics, key/time signatures, tempo     |            Yes             |            No            |   Yes (via ManuScript plug-in)    |
-| Articulations, noteheads, lines, staff text, clefs             |             No             |            No            |   Yes (via ManuScript plug-in)    |
-| Read the element at the cursor                                 |    Yes (via QML plugin)    |            No            |   Yes (via ManuScript plug-in)    |
-| Read cursor position                                           | Yes (measure, beat, staff) | Limited (UI state only)  |    Yes (measure, beat, staff)     |
+| Capability                                                      |         MuseScore          |  Dorico (experimental)   |      Sibelius (experimental)      |
+| --------------------------------------------------------------- | :------------------------: | :----------------------: | :-------------------------------: |
+| Execute commands (undo, navigation, barlines, rehearsal marks)  |            Yes             |           Yes            |                Yes                |
+| Get application status                                          |            Yes             |           Yes            |       Responsiveness (ping)       |
+| Get selection properties                                        |            Yes             |           Yes            |    Yes (cursor, as MuseScore)     |
+| Set barlines                                                    |            Yes             |           Yes            | Yes (not dotted, endStartRepeat)  |
+| Add rehearsal marks                                             |   Yes (with custom text)   | Yes (auto-numbered only) | Yes (letters or numbers as given) |
+| Navigate to measure and staff                                   |            Yes             |       Measure only       |   Yes (via ManuScript plug-in)    |
+| Notes, chord symbols, dynamics, key/time signatures, tempo      |            Yes             |            No            |   Yes (via ManuScript plug-in)    |
+| Rests, tuplets, tremolos, grace notes, sticking, beat placement |             No             |            No            |   Yes (via ManuScript plug-in)    |
+| Articulations, noteheads, lines, staff text, clefs              |             No             |            No            |   Yes (via ManuScript plug-in)    |
+| Read the element at the cursor                                  |    Yes (via QML plugin)    |            No            |   Yes (via ManuScript plug-in)    |
+| Read cursor position                                            | Yes (measure, beat, staff) | Limited (UI state only)  |    Yes (measure, beat, staff)     |
 
 ### What Dorico's API cannot do
 

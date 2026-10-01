@@ -19,6 +19,8 @@ __all__ = [
     "ChordSymbolAdded",
     "Clef",
     "ClefSet",
+    "GraceNotesAdded",
+    "GraceOrnament",
     "CursorInfo",
     "CursorPosition",
     "Duration",
@@ -32,6 +34,7 @@ __all__ = [
     "NoteAdded",
     "Notehead",
     "NoteheadSet",
+    "RestAdded",
     "Part",
     "RehearsalMarkAdded",
     "Result",
@@ -39,11 +42,15 @@ __all__ = [
     "SelectedRange",
     "SelectionProperties",
     "TempoSet",
+    "StickingAdded",
     "TextAdded",
     "TextStyle",
     "TimeSignature",
     "TimeSignatureSet",
     "Transposed",
+    "TremoloKind",
+    "TremoloSet",
+    "TupletAdded",
 ]
 
 
@@ -270,6 +277,7 @@ type LineType = Literal[
     "slur_below",
     "crescendo",
     "diminuendo",
+    "decrescendo",
     "trill",
     "ottava",
     "ottava_bassa",
@@ -278,7 +286,7 @@ type LineType = Literal[
     "pedal",
     "glissando",
 ]
-"""A line spanning measures: slurs, hairpins, trills, octave lines, pedal."""
+"""A line: slurs, hairpins (decrescendo is diminuendo), trills, octave lines, pedal."""
 
 type TextStyle = Literal["technique", "expression", "plain", "boxed"]
 """How staff text is styled: technique (pizz.), expression (dolce), plain, boxed."""
@@ -328,6 +336,10 @@ class LineAdded(Result):
     start_measure: int
     end_measure: int
     staff: int
+    start_beat: int | None = None
+    """The beat the line starts on, or None for the start of the measure."""
+    end_beat: int | None = None
+    """The beat the line ends with, or None for the end of the measure."""
 
 
 class TextAdded(Result):
@@ -341,3 +353,61 @@ class ClefSet(Result):
     clef: Clef
     measure: int
     staff: int
+
+
+# ── Rhythm and percussion notation ────────────────────────────────────
+
+type TremoloKind = Literal["single", "double", "buzz"]
+"""Strokes on one note's stem, strokes between two notes, or a buzz (z) roll."""
+
+type GraceOrnament = Literal["flam", "drag", "ruff"]
+"""One, two or three grace notes before a note, in the note's pitch."""
+
+
+class RestAdded(CursorPosition):
+    """A rest was added; the position is where the cursor went afterwards."""
+
+    duration: Duration
+
+
+class TupletAdded(CursorPosition):
+    """A tuplet was filled; the position is where the cursor went afterwards."""
+
+    actual: int
+    """Notes in the tuplet (3 in a triplet)."""
+    normal: int
+    """Notes of the same value the tuplet takes the time of (2 in a triplet)."""
+    unit: Duration
+    """The value of each note in the tuplet."""
+    notes: int
+    """How many notes and rests were written."""
+
+
+class TremoloSet(Result):
+    kind: TremoloKind
+    strokes: int
+    """Tremolo strokes (0 removes them); -1 for a buzz roll."""
+    start_measure: int
+    end_measure: int
+    staff: int
+    beat: int | None
+    """The beat the change was limited to, or None for every note."""
+    notes: int
+    """How many notes and chords were changed."""
+
+
+class GraceNotesAdded(Result):
+    ornament: GraceOrnament
+    measure: int
+    staff: int
+    notes: int
+    """How many grace notes were added."""
+
+
+class StickingAdded(Result):
+    sticking: list[str]
+    """The letters, one per note, as written under the notes."""
+    measure: int
+    staff: int
+    notes: int
+    """How many notes got a letter; fewer than the letters when notes ran out."""

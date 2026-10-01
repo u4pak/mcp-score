@@ -50,6 +50,39 @@ if (problem = '')
 	problem = CheckBar(score, endBar);
 }
 return problem;}"
+	BeatLength "(score, bar) {
+// The length of a beat in bar: the time signature's denominator as a note.
+timeSignature = score.SystemStaff.CurrentTimeSignature(bar);
+return 1024 / timeSignature.Denominator;}"
+	CheckBeat "(score, bar, staff, beat) {
+// The reason beat (1-indexed) is not in bar, or the empty string.
+if (beat < 1)
+{
+	return 'beat must be >= 1';
+}
+if (BeatPosition(score, bar, beat) >= StaffBar(score, bar, staff).Length)
+{
+	return 'Measure ' & bar & ' has no beat ' & beat;
+}
+return '';}"
+	NextPosition "(barObject, bar, staff, position) {
+// Where the cursor goes after something ending at position in barObject.
+if (position >= barObject.Length)
+{
+	return CreateDictionary('measure', bar + 1, 'staff', staff, 'position', 0);
+}
+return CreateDictionary('measure', bar, 'staff', staff, 'position', position);}"
+	NoteRestAt "(barObject, position) {
+// The voice 1 note or chord starting at position, or null.
+found = null;
+for each NoteRest noteRest in barObject
+{
+	if ((noteRest.VoiceNumber = 1) and (noteRest.Position = position) and (noteRest.NoteCount > 0))
+	{
+		found = noteRest;
+	}
+}
+return found;}"
 	BeatPosition "(score, bar, beat) {
 // Where beat (1-indexed, in the time signature's beat unit) starts in bar,
 // or -1, meaning every position, when beat is 0.
@@ -421,26 +454,49 @@ while (bar <= endBar)
 	bar = bar + 1;
 }
 return CreateDictionary('notes', notes);}"
-	AddLine "(startBar, endBar, staff, styleId) {
-// A line of style styleId from the start of startBar to the end of endBar.
+	AddLine "(startBar, endBar, staff, startBeat, endBeat, styleId) {
+// A line of style styleId from startBeat of startBar (its start when 0)
+// to the end of endBeat of endBar (its end when 0).
 if (Sibelius.ScoreCount = 0)
 {
 	return Failure(_msgNoScore);
 }
 score = Sibelius.ActiveScore;
 problem = CheckPassage(score, startBar, endBar, staff);
+if ((problem = '') and (startBeat > 0))
+{
+	problem = CheckBeat(score, startBar, staff, startBeat);
+}
+if ((problem = '') and (endBeat > 0))
+{
+	problem = CheckBeat(score, endBar, staff, endBeat);
+}
 if (problem != '')
 {
 	return Failure(problem);
 }
-duration = 0;
+startPosition = 0;
+if (startBeat > 0)
+{
+	startPosition = BeatPosition(score, startBar, startBeat);
+}
+endPosition = StaffBar(score, endBar, staff).Length;
+if (endBeat > 0)
+{
+	endPosition = BeatPosition(score, endBar, endBeat) + BeatLength(score, endBar);
+}
+duration = endPosition - startPosition;
 bar = startBar;
-while (bar <= endBar)
+while (bar < endBar)
 {
 	duration = duration + StaffBar(score, bar, staff).Length;
 	bar = bar + 1;
 }
-line = StaffBar(score, startBar, staff).AddLine(0, duration, styleId);
+if (duration <= 0)
+{
+	return Failure('The line would end before it starts.');
+}
+line = StaffBar(score, startBar, staff).AddLine(startPosition, duration, styleId);
 if (line = null)
 {
 	return Failure('Sibelius could not add the line ' & styleId & '.');
@@ -480,4 +536,212 @@ if (clef = null)
 	return Failure('Sibelius could not add the clef ' & clefId & '.');
 }
 return CreateDictionary('measure', bar, 'staff', staff);}"
+	BeatToPosition "(bar, staff, beat) {
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem = '')
+{
+	problem = CheckBeat(score, bar, staff, beat);
+}
+if (problem != '')
+{
+	return Failure(problem);
+}
+return CreateDictionary('measure', bar, 'staff', staff, 'position', BeatPosition(score, bar, beat));}"
+	AddRest "(bar, staff, position, duration) {
+// ManuScript cannot add a rest directly: add a note and delete it, which
+// leaves a rest of the same duration.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+barObject = StaffBar(score, bar, staff);
+if ((position + duration) > barObject.Length)
+{
+	return Failure('The rest does not fit in what is left of measure ' & bar & '.');
+}
+note = barObject.AddNote(position, 60, duration);
+if (note = null)
+{
+	return Failure('Sibelius could not add the rest to measure ' & bar & '.');
+}
+note.ParentNoteRest.Delete();
+return NextPosition(barObject, bar, staff, position + duration);}"
+	AddTuplet "(bar, staff, position, pitches, actual, normal, unit) {
+// actual notes of length unit in the time of normal; a negative pitch is
+// a rest.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+barObject = StaffBar(score, bar, staff);
+played = normal * unit;
+if ((position + played) > barObject.Length)
+{
+	return Failure('The tuplet does not fit in what is left of measure ' & bar & '.');
+}
+tuplet = barObject.AddTuplet(position, 1, actual, normal, unit);
+if (tuplet = null)
+{
+	return Failure('Sibelius could not add a ' & actual & ':' & normal & ' tuplet.');
+}
+notes = 0;
+for index = 0 to pitches.Length
+{
+	pitch = pitches[index];
+	if (pitch < 0)
+	{
+		note = tuplet.AddNote(index * unit, 60, unit);
+		if (note != null)
+		{
+			note.ParentNoteRest.Delete();
+		}
+	}
+	else
+	{
+		note = tuplet.AddNote(index * unit, pitch, unit);
+	}
+	if (note = null)
+	{
+		return Failure('Sibelius could not add note ' & (index + 1) & ' of the tuplet.');
+	}
+	notes = notes + 1;
+}
+following = NextPosition(barObject, bar, staff, position + played);
+following['notes'] = notes;
+return following;}"
+	SetTremolo "(startBar, endBar, staff, beat, betweenNotes, strokes) {
+// Tremolo strokes on the stem (betweenNotes False; -1 is a buzz roll) or
+// between each note and the next (betweenNotes True), on every note and chord
+// of the passage or on those starting on beat (0 means every beat).
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPassage(score, startBar, endBar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+notes = 0;
+bar = startBar;
+while (bar <= endBar)
+{
+	position = BeatPosition(score, bar, beat);
+	for each NoteRest noteRest in StaffBar(score, bar, staff)
+	{
+		if ((noteRest.NoteCount > 0) and ((position < 0) or (noteRest.Position = position)))
+		{
+			if (betweenNotes)
+			{
+				noteRest.DoubleTremolos = strokes;
+			}
+			else
+			{
+				noteRest.SingleTremolos = strokes;
+			}
+			notes = notes + 1;
+		}
+	}
+	bar = bar + 1;
+}
+return CreateDictionary('notes', notes);}"
+	AddGraceNotes "(bar, staff, position, count, slashed, duration) {
+// count grace notes of duration before the note at position, on its
+// lowest note's line, slashed (acciaccaturas) or not (appoggiaturas).
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+noteRest = NoteRestAt(StaffBar(score, bar, staff), position);
+if (noteRest = null)
+{
+	return Failure('There is no note at that position of measure ' & bar & ' to add grace notes to.');
+}
+pitch = noteRest.Lowest.Pitch;
+diatonicPitch = noteRest.Lowest.DiatonicPitch;
+added = 0;
+while (added < count)
+{
+	if (slashed)
+	{
+		grace = noteRest.AddAcciaccaturaBefore(pitch, duration, False, 1, diatonicPitch);
+	}
+	else
+	{
+		grace = noteRest.AddAppoggiaturaBefore(pitch, duration, False, 1, diatonicPitch);
+	}
+	if (grace = null)
+	{
+		return Failure('Sibelius could not add the grace notes.');
+	}
+	added = added + 1;
+}
+return CreateDictionary('measure', bar, 'staff', staff, 'notes', added);}"
+	AddSticking "(bar, staff, position, letters) {
+// One letter as a lyric under each voice 1 note or chord from position on,
+// continuing into the following bars until the letters run out. The notes
+// are collected first: ManuScript forbids adding to a bar while
+// iterating over it.
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+bars = CreateSparseArray();
+positions = CreateSparseArray();
+durations = CreateSparseArray();
+current = bar;
+start = position;
+while ((current <= score.SystemStaff.BarCount) and (bars.Length < letters.Length))
+{
+	for each NoteRest noteRest in StaffBar(score, current, staff)
+	{
+		if ((noteRest.VoiceNumber = 1) and (noteRest.NoteCount > 0) and (noteRest.Position >= start) and (bars.Length < letters.Length))
+		{
+			bars.Push(current);
+			positions.Push(noteRest.Position);
+			durations.Push(noteRest.Duration);
+		}
+	}
+	current = current + 1;
+	start = 0;
+}
+for index = 0 to bars.Length
+{
+	lyric = StaffBar(score, bars[index], staff).AddLyric(positions[index], durations[index], letters[index]);
+	if (lyric = null)
+	{
+		return Failure('Sibelius could not write the sticking.');
+	}
+}
+return CreateDictionary('measure', bar, 'staff', staff, 'notes', bars.Length);}"
 }

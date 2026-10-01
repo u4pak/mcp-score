@@ -464,8 +464,8 @@ class TestMuseScoreBridgeErrors:
             await bridge.go_to_measure(9)
 
 
-class TestMuseScoreBridgeNotationNotYetSupported:
-    """Articulations, noteheads, lines, text and clefs are Sibelius-only so far."""
+class TestMuseScoreBridgeSibeliusOnlyOperations:
+    """Notation beyond MuseScore's plugin commands is Sibelius-only so far."""
 
     @pytest.mark.anyio()
     @pytest.mark.parametrize(
@@ -516,6 +516,53 @@ class TestMuseScoreBridgeNotationNotYetSupported:
                 partial(MuseScoreBridge.set_clef, clef="bass"),
                 "change clefs",
                 id="set_clef",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.go_to_beat, beat=2),
+                "move to a beat",
+                id="go_to_beat",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.add_rest,
+                    duration=Duration(numerator=1, denominator=4),
+                ),
+                "add rests",
+                id="add_rest",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.add_tuplet,
+                    pitches=[60, 62, 64],
+                    actual=3,
+                    normal=2,
+                    unit=Duration(numerator=1, denominator=8),
+                ),
+                "add tuplets",
+                id="add_tuplet",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.set_tremolo,
+                    start_measure=1,
+                    end_measure=1,
+                    staff=0,
+                    kind="single",
+                    strokes=3,
+                    beat=None,
+                ),
+                "add tremolos",
+                id="set_tremolo",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.add_grace_notes, ornament="flam"),
+                "add grace notes",
+                id="add_grace_notes",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.add_sticking, sticking=["R"]),
+                "add sticking",
+                id="add_sticking",
             ),
         ],
     )
