@@ -8,12 +8,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mcp_score import cli
-from mcp_score.cli import install_plugin, install_skill, main
+from mcp_score.cli import install_plugin, install_sibelius_plugin, install_skill, main
 from mcp_score.musescore.paths import (
     PLUGIN_DIRECTORY_NAME,
     PLUGIN_QML_NAME,
     plugins_directory,
 )
+from mcp_score.sibelius import paths as sibelius_paths
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -123,6 +124,83 @@ class TestInstallPlugin:
         assert installed.is_dir()
 
 
+class TestInstallSibeliusPlugin:
+    def test_copies_the_plugin_into_its_category_folder(self, tmp_path: Path) -> None:
+        # Arrange
+        source = tmp_path / "source" / sibelius_paths.PLUGIN_FILE_NAME
+        source.parent.mkdir()
+        source.write_text("{ fake plug-in }")
+        directory = tmp_path / "Plugins"
+
+        with patch(_PACKAGE_PATH, return_value=source):
+            # Act
+            installed = install_sibelius_plugin(directory)
+
+        # Assert: Sibelius lists plug-ins by category subfolder
+        assert installed == (
+            directory / sibelius_paths.PLUGIN_CATEGORY / sibelius_paths.PLUGIN_FILE_NAME
+        )
+        assert installed.read_text() == "{ fake plug-in }"
+
+    def test_installs_the_bundled_plugin_file(self, tmp_path: Path) -> None:
+        # Act: no package_path patch, so the real bundled file is used
+        installed = install_sibelius_plugin(tmp_path)
+
+        # Assert
+        assert installed.read_text().lstrip().startswith("{")
+        assert "GetScore" in installed.read_text()
+
+    def test_replaces_an_earlier_install(self, tmp_path: Path) -> None:
+        # Arrange
+        stale = (
+            tmp_path / sibelius_paths.PLUGIN_CATEGORY / sibelius_paths.PLUGIN_FILE_NAME
+        )
+        stale.parent.mkdir()
+        stale.write_text("{ old }")
+
+        # Act
+        install_sibelius_plugin(tmp_path)
+
+        # Assert
+        assert stale.read_text() != "{ old }"
+
+
+class TestSibeliusPluginsDirectory:
+    def test_windows_uses_roaming_app_data(self, tmp_path: Path) -> None:
+        # Arrange
+        with patch.dict("os.environ", {"APPDATA": str(tmp_path / "Roaming")}):
+            # Act
+            directory = sibelius_paths.plugins_directory(platform="win32")
+
+        # Assert
+        assert directory == tmp_path / "Roaming" / "Avid" / "Sibelius" / "Plugins"
+
+    def test_windows_without_app_data_falls_back_to_home(self, tmp_path: Path) -> None:
+        # Arrange
+        with patch.dict("os.environ", {}, clear=True):
+            # Act
+            directory = sibelius_paths.plugins_directory(tmp_path, platform="win32")
+
+        # Assert
+        assert directory == (
+            tmp_path / "AppData" / "Roaming" / "Avid" / "Sibelius" / "Plugins"
+        )
+
+    def test_macos_uses_application_support(self, tmp_path: Path) -> None:
+        # Act
+        directory = sibelius_paths.plugins_directory(tmp_path, platform="darwin")
+
+        # Assert
+        assert directory == (
+            tmp_path
+            / "Library"
+            / "Application Support"
+            / "Avid"
+            / "Sibelius"
+            / "Plugins"
+        )
+
+
 class TestMain:
     def test_without_command_runs_the_server(self) -> None:
         # Arrange
@@ -163,23 +241,31 @@ class TestMain:
         ]
 
     @pytest.mark.parametrize(
-        ("command", "skill", "plugin"),
+        ("command", "skill", "plugin", "sibelius_plugin"),
         [
-            ("install", True, True),
-            ("install-skill", True, False),
-            ("install-plugin", False, True),
+            ("install", True, True, False),
+            ("install-skill", True, False, False),
+            ("install-plugin", False, True, False),
+            ("install-sibelius-plugin", False, False, True),
         ],
     )
     def test_install_commands_install_what_they_name(
-        self, command: str, skill: bool, plugin: bool, tmp_path: Path
+        self,
+        command: str,
+        skill: bool,
+        plugin: bool,
+        sibelius_plugin: bool,
+        tmp_path: Path,
     ) -> None:
         # Arrange
         install_skill_mock = MagicMock(return_value=tmp_path / "skill")
         install_plugin_mock = MagicMock(return_value=tmp_path / "plugin")
+        install_sibelius_mock = MagicMock(return_value=tmp_path / "plg")
 
         with (
             patch.object(cli, "install_skill", install_skill_mock),
             patch.object(cli, "install_plugin", install_plugin_mock),
+            patch.object(cli, "install_sibelius_plugin", install_sibelius_mock),
         ):
             # Act
             code = main([command])
@@ -188,6 +274,7 @@ class TestMain:
         assert code == cli.EXIT_SUCCESS
         assert install_skill_mock.called is skill
         assert install_plugin_mock.called is plugin
+        assert install_sibelius_mock.called is sibelius_plugin
 
     def test_install_with_missing_files_fails_with_message(
         self, capsys: pytest.CaptureFixture[str]

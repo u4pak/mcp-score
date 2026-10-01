@@ -10,7 +10,14 @@ from mcp.server.mcpserver import MCPServer
 
 from mcp_score.bridge import BridgeRegistry
 from mcp_score.context import AppState
-from mcp_score.tools import ToolModule, analysis, connection, generate, manipulation
+from mcp_score.tools import (
+    ToolModule,
+    analysis,
+    connection,
+    generate,
+    guides,
+    manipulation,
+)
 from mcp_score.tools import render as render_tools
 
 if TYPE_CHECKING:
@@ -25,6 +32,7 @@ TOOL_MODULES: tuple[ToolModule, ...] = (
     analysis,
     manipulation,
     generate,
+    guides,
     render_tools,
 )
 """Every module whose tools the server offers, in the order they register."""

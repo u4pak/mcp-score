@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Protocol
 from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_score.bridge import BridgeError
+from mcp_score.bridge.results import BEAT_FORMAT, BeatPosition
 from mcp_score.context import registry_of
 
 if TYPE_CHECKING:
@@ -34,6 +35,8 @@ __all__ = [
     "ToolError",
     "ToolModule",
     "navigate",
+    "BEAT_FORMAT",
+    "parse_beat",
     "require_bridge",
     "require_measure",
     "require_measure_range",
@@ -42,7 +45,7 @@ __all__ = [
 
 NOT_CONNECTED = (
     "Not connected to any score application. "
-    "Use connect_to_musescore or connect_to_dorico first."
+    "Use connect_to_musescore, connect_to_dorico or connect_to_sibelius first."
 )
 
 
@@ -95,6 +98,20 @@ def require_measure(measure: int, name: str = "measure") -> None:
         raise ToolError(f"{name} must be >= 1.")
 
 
+def parse_beat(value: int | str | None, name: str = "beat") -> BeatPosition | None:
+    """Read a tool's beat argument (see :data:`BEAT_FORMAT`).
+
+    Raises:
+        ToolError: When it does not name a point in a measure.
+    """
+    if value is None:
+        return None
+    try:
+        return BeatPosition.parse(value, name)
+    except ValueError as error:
+        raise ToolError(str(error)) from None
+
+
 def require_measure_range(start_measure: int, end_measure: int) -> None:
     """Validate an inclusive, 1-indexed measure range.
 
@@ -106,8 +123,13 @@ def require_measure_range(start_measure: int, end_measure: int) -> None:
         raise ToolError("end_measure must be >= start_measure.")
 
 
-async def navigate(bridge: ScoreBridge, measure: int, staff: int | None = None) -> None:
-    """Move the application's cursor to *measure* (and *staff*, if given).
+async def navigate(
+    bridge: ScoreBridge,
+    measure: int,
+    staff: int | None = None,
+    beat: BeatPosition | None = None,
+) -> None:
+    """Move the application's cursor to *measure* (and *staff* and *beat*, if given).
 
     Raises:
         BridgeError: When the application refuses to move, so a command
@@ -116,3 +138,5 @@ async def navigate(bridge: ScoreBridge, measure: int, staff: int | None = None) 
     await bridge.go_to_measure(measure)
     if staff is not None:
         await bridge.go_to_staff(staff)
+    if beat is not None:
+        await bridge.go_to_beat(beat)

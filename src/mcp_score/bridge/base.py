@@ -14,23 +14,42 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from mcp_score.bridge.passage import PassageEvent, PassageWritten
     from mcp_score.bridge.results import (
+        Articulation,
+        ArticulationSet,
         BarlineSet,
+        BeatPosition,
         ChordSymbolAdded,
+        Clef,
+        ClefSet,
         CursorInfo,
         CursorPosition,
         Duration,
         DynamicAdded,
+        GraceNotesAdded,
+        GraceOrnament,
         KeySignatureSet,
+        LineAdded,
+        LineType,
         MeasuresAppended,
         NoteAdded,
+        Notehead,
+        NoteheadSet,
         RehearsalMarkAdded,
+        RestAdded,
         ScoreInfo,
         SelectedRange,
         SelectionProperties,
+        StickingAdded,
         TempoSet,
+        TextAdded,
+        TextStyle,
         TimeSignatureSet,
         Transposed,
+        TremoloKind,
+        TremoloSet,
+        TupletAdded,
     )
 
 __all__ = ["BridgeError", "CommandResult", "ScoreBridge"]
@@ -183,3 +202,116 @@ class ScoreBridge(ABC):
     @abstractmethod
     async def undo(self) -> CursorPosition:
         """Undo the last change; the cursor may move if the change removed measures."""
+
+    # ── Notation on existing notes, lines, text and clefs ───────────
+    #
+    # Not every bridge implements these yet, so each refuses by default.
+
+    async def set_articulation(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        articulation: Articulation,
+        beat: BeatPosition | None,
+        remove: bool,
+    ) -> ArticulationSet:
+        """Add (or remove) an articulation on the notes of a passage.
+
+        *beat* limits the change to the notes starting there in each
+        measure.
+        """
+        raise self._not_supported("set articulations")
+
+    async def set_notehead(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        notehead: Notehead | int,
+        beat: BeatPosition | None,
+    ) -> NoteheadSet:
+        """Change the notehead of the notes of a passage; *beat* as above.
+
+        *notehead* is a shape name or the application's notehead number.
+        """
+        raise self._not_supported("change noteheads")
+
+    async def add_line(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        line: LineType,
+        start_beat: BeatPosition | None = None,
+        end_beat: BeatPosition | None = None,
+    ) -> LineAdded:
+        """Add a line from one measure to another.
+
+        It starts on *start_beat* of the first measure (its start when
+        None) and ends with *end_beat* of the last (its end when None).
+        """
+        raise self._not_supported("add lines")
+
+    async def add_text(self, text: str, style: TextStyle) -> TextAdded:
+        """Add staff text at the current position."""
+        raise self._not_supported("add staff text")
+
+    async def set_clef(self, clef: Clef) -> ClefSet:
+        """Change the clef at the current position."""
+        raise self._not_supported("change clefs")
+
+    # ── Rhythm and percussion notation ───────────────────────────────
+
+    async def go_to_beat(self, beat: BeatPosition) -> CursorPosition:
+        """Move to a beat, or a partial of one, in the current measure."""
+        raise self._not_supported("move to a beat")
+
+    async def add_rest(
+        self, duration: Duration, advance_cursor: bool = True
+    ) -> RestAdded:
+        """Add a rest at the current position."""
+        raise self._not_supported("add rests")
+
+    async def add_tuplet(
+        self, pitches: list[int | None], actual: int, normal: int, unit: Duration
+    ) -> TupletAdded:
+        """Add a tuplet of *unit* notes at the current position.
+
+        *actual* notes take the time of *normal*; each pitch is a MIDI
+        pitch or None for a rest, and there must be *actual* of them.
+        """
+        raise self._not_supported("add tuplets")
+
+    async def set_tremolo(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        kind: TremoloKind,
+        strokes: int,
+        beat: BeatPosition | None,
+    ) -> TremoloSet:
+        """Set tremolo strokes (0 removes them) on the notes of a passage."""
+        raise self._not_supported("add tremolos")
+
+    async def add_grace_notes(self, ornament: GraceOrnament) -> GraceNotesAdded:
+        """Add a flam, drag or ruff before the note at the current position."""
+        raise self._not_supported("add grace notes")
+
+    async def add_sticking(self, sticking: list[str]) -> StickingAdded:
+        """Write one sticking letter under each note from the current position."""
+        raise self._not_supported("add sticking")
+
+    async def write_passage(self, events: list[PassageEvent]) -> PassageWritten:
+        """Write notes, rests and their markings from the current position.
+
+        Events follow each other (see :mod:`mcp_score.bridge.passage`); the
+        cursor ends after the last one.
+        """
+        raise self._not_supported("write passages")
+
+    def _not_supported(self, operation: str) -> BridgeError:
+        return BridgeError(
+            f"mcp-score cannot {operation} in {self.application_name} yet."
+        )

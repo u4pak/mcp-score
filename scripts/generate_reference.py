@@ -51,7 +51,8 @@ PREAMBLE = "\n".join(
         " cannot do what was asked fails with an MCP tool error whose message says"
         " why."
         " Connection, analysis and manipulation tools need a connected"
-        " application (MuseScore, or experimentally Dorico); generation and"
+        " application (MuseScore, or experimentally Dorico or Sibelius);"
+        " generation and"
         " rendering tools work on files.",
     ]
 )

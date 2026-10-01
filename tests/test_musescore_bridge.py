@@ -17,8 +17,10 @@ from pydantic import BaseModel
 
 from mcp_score.bridge import BridgeError
 from mcp_score.bridge.musescore import DEFAULT_PORT, MuseScoreBridge
+from mcp_score.bridge.passage import PassageEvent
 from mcp_score.bridge.results import (
     BarlineSet,
+    BeatPosition,
     ChordSymbolAdded,
     CursorInfo,
     CursorPosition,
@@ -462,6 +464,134 @@ class TestMuseScoreBridgeErrors:
         # Act / Assert
         with pytest.raises(BridgeError, match="out of range"):
             await bridge.go_to_measure(9)
+
+
+class TestMuseScoreBridgeSibeliusOnlyOperations:
+    """Notation beyond MuseScore's plugin commands is Sibelius-only so far."""
+
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize(
+        ("operation", "refusal"),
+        [
+            pytest.param(
+                partial(
+                    MuseScoreBridge.set_articulation,
+                    start_measure=1,
+                    end_measure=2,
+                    staff=0,
+                    articulation="accent",
+                    beat=None,
+                    remove=False,
+                ),
+                "set articulations",
+                id="set_articulation",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.set_notehead,
+                    start_measure=1,
+                    end_measure=2,
+                    staff=0,
+                    notehead="cross",
+                    beat=None,
+                ),
+                "change noteheads",
+                id="set_notehead",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.add_line,
+                    start_measure=1,
+                    end_measure=2,
+                    staff=0,
+                    line="slur",
+                ),
+                "add lines",
+                id="add_line",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.add_text, text="pizz.", style="technique"),
+                "add staff text",
+                id="add_text",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.set_clef, clef="bass"),
+                "change clefs",
+                id="set_clef",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.go_to_beat, beat=BeatPosition(beat=2)),
+                "move to a beat",
+                id="go_to_beat",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.add_rest,
+                    duration=Duration(numerator=1, denominator=4),
+                ),
+                "add rests",
+                id="add_rest",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.add_tuplet,
+                    pitches=[60, 62, 64],
+                    actual=3,
+                    normal=2,
+                    unit=Duration(numerator=1, denominator=8),
+                ),
+                "add tuplets",
+                id="add_tuplet",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.set_tremolo,
+                    start_measure=1,
+                    end_measure=1,
+                    staff=0,
+                    kind="single",
+                    strokes=3,
+                    beat=None,
+                ),
+                "add tremolos",
+                id="set_tremolo",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.add_grace_notes, ornament="flam"),
+                "add grace notes",
+                id="add_grace_notes",
+            ),
+            pytest.param(
+                partial(MuseScoreBridge.add_sticking, sticking=["R"]),
+                "add sticking",
+                id="add_sticking",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.write_passage,
+                    events=[
+                        PassageEvent(
+                            pitch=60, duration=Duration(numerator=1, denominator=4)
+                        )
+                    ],
+                ),
+                "write passages",
+                id="write_passage",
+            ),
+        ],
+    )
+    async def test_refuses_without_sending_anything(
+        self, operation: Callable[[MuseScoreBridge], Awaitable[object]], refusal: str
+    ) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge()
+
+        # Act / Assert
+        with pytest.raises(
+            BridgeError, match=f"^mcp-score cannot {refusal} in MuseScore yet.$"
+        ):
+            await operation(bridge)
+        assert sent_payloads(connection) == []
 
 
 class TestMuseScoreBridgePing:

@@ -1,7 +1,7 @@
 """Connection tools: which application the server talks to.
 
 Each application has its own connect and disconnect pair, and connecting
-to one disconnects the other. The information and ping tools work with
+to one disconnects any other. The information and ping tools work with
 whichever application is connected.
 """
 
@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from mcp_score.bridge.dorico import DEFAULT_PORT as DORICO_DEFAULT_PORT
 from mcp_score.bridge.musescore import DEFAULT_PORT as MUSESCORE_DEFAULT_PORT
 from mcp_score.bridge.results import Result, ScoreInfo
+from mcp_score.bridge.sibelius import DEFAULT_PORT as SIBELIUS_DEFAULT_PORT
 from mcp_score.bridge.websocket import DEFAULT_HOST
 from mcp_score.context import ScoreContext, registry_of
 from mcp_score.tools import ToolError, require_bridge, score_tool
@@ -28,6 +29,10 @@ MUSESCORE_CONNECT_HINT = (
     "The plugin requires MuseScore Studio 4.4.2 or later."
 )
 DORICO_CONNECT_HINT = "Is Dorico running with Remote Control enabled?"
+SIBELIUS_CONNECT_HINT = (
+    "Is Sibelius 2024.3 or later running with Sibelius Connect enabled, and "
+    "was the connection allowed in Sibelius?"
+)
 
 
 class Connected(Result):
@@ -115,8 +120,36 @@ async def disconnect_from_dorico(context: ScoreContext) -> Disconnected:
 
 
 @score_tool
+async def connect_to_sibelius(
+    context: ScoreContext, host: str = DEFAULT_HOST, port: int = SIBELIUS_DEFAULT_PORT
+) -> Connected:
+    """Connect to a running Sibelius via Sibelius Connect (experimental).
+
+    Sibelius support is experimental: it has not been verified against a
+    running Sibelius. Sibelius 2024.3 and later serve Sibelius Connect
+    (enabled, and its port set, on the Input Devices page of Sibelius's
+    preferences). The MCP Score Bridge plug-in (`mcp-score install-sibelius-plugin`)
+    must be installed. Sibelius asks the user to allow the first
+    connection. Connecting disconnects any other application.
+
+    Args:
+        host: WebSocket host (default: localhost).
+        port: WebSocket port (default: 1898, Sibelius Connect's default).
+    """
+    return await _connect(
+        context, registry_of(context).sibelius, host, port, SIBELIUS_CONNECT_HINT
+    )
+
+
+@score_tool
+async def disconnect_from_sibelius(context: ScoreContext) -> Disconnected:
+    """Disconnect from Sibelius."""
+    return await _disconnect(context, registry_of(context).sibelius)
+
+
+@score_tool
 async def get_live_score_info(context: ScoreContext) -> ScoreInfo:
-    """Get information about the score open in MuseScore.
+    """Get information about the score open in MuseScore or Sibelius.
 
     Title, parts, measure count and the opening key and time signatures.
     Not available with Dorico, whose API cannot describe the score.
@@ -139,6 +172,8 @@ def register(server: MCPServer) -> None:
         disconnect_from_musescore,
         connect_to_dorico,
         disconnect_from_dorico,
+        connect_to_sibelius,
+        disconnect_from_sibelius,
         get_live_score_info,
         ping_score_app,
     ):

@@ -19,35 +19,57 @@ from pydantic import BaseModel
 from websockets.protocol import State
 
 from mcp_score.bridge import BridgeError, BridgeRegistry, CommandResult, ScoreBridge
+from mcp_score.bridge.passage import PassageEvent, PassageWritten
 from mcp_score.bridge.results import (
+    Articulation,
+    ArticulationSet,
     BarlineSet,
+    BeatPosition,
     ChordSymbolAdded,
+    Clef,
+    ClefSet,
     CursorInfo,
     CursorPosition,
     Duration,
     DynamicAdded,
+    GraceNotesAdded,
+    GraceOrnament,
     KeySignatureSet,
+    LineAdded,
+    LineType,
     MeasuresAppended,
     NoteAdded,
+    Notehead,
+    NoteheadSet,
     Part,
     RehearsalMarkAdded,
+    RestAdded,
     ScoreInfo,
     SelectedRange,
     SelectionProperties,
+    StickingAdded,
     TempoSet,
+    TextAdded,
+    TextStyle,
     TimeSignature,
     TimeSignatureSet,
     Transposed,
+    TremoloKind,
+    TremoloSet,
+    TupletAdded,
 )
 from mcp_score.context import AppState, ScoreContext
 
 __all__ = [
     "REMOTE_CONTROL_HANDSHAKE",
     "SESSION_TOKEN",
+    "SIBELIUS_COMMANDS_RUN",
+    "SIBELIUS_HANDSHAKE",
     "WEBSOCKETS_CONNECT",
     "BridgeCall",
     "FakeBridge",
     "fake_connection",
+    "plugin_reply",
     "score_context",
     "sent_payloads",
 ]
@@ -101,6 +123,48 @@ DEFAULT_REPLIES: dict[str, BaseModel] = {
     "append_measures": MeasuresAppended(count=1, total_measures=9),
     "transpose": Transposed(semitones=0, notes=0),
     "undo": _START,
+    "set_articulation": ArticulationSet(
+        articulation="staccato",
+        removed=False,
+        start_measure=1,
+        end_measure=1,
+        staff=0,
+        beat=None,
+        notes=4,
+    ),
+    "set_notehead": NoteheadSet(
+        notehead="cross",
+        start_measure=1,
+        end_measure=1,
+        staff=0,
+        beat=None,
+        notes=4,
+    ),
+    "add_line": LineAdded(line="slur", start_measure=1, end_measure=2, staff=0),
+    "add_text": TextAdded(text="pizz.", style="technique", measure=1, staff=0),
+    "set_clef": ClefSet(clef="bass", measure=1, staff=0),
+    "go_to_beat": _START,
+    "add_rest": RestAdded(measure=1, staff=0, duration=_QUARTER_NOTE),
+    "add_tuplet": TupletAdded(
+        measure=1,
+        staff=0,
+        actual=3,
+        normal=2,
+        unit=Duration(numerator=1, denominator=8),
+        notes=3,
+    ),
+    "set_tremolo": TremoloSet(
+        kind="single",
+        strokes=3,
+        start_measure=1,
+        end_measure=1,
+        staff=0,
+        beat=None,
+        notes=4,
+    ),
+    "add_grace_notes": GraceNotesAdded(ornament="flam", measure=1, staff=0, notes=1),
+    "write_passage": PassageWritten(measure=2, staff=0, events=4, notes=4),
+    "add_sticking": StickingAdded(sticking=["R", "L"], measure=1, staff=0, notes=2),
 }
 """What a ``FakeBridge`` answers for each operation unless a test says otherwise."""
 
@@ -278,6 +342,112 @@ class FakeBridge(ScoreBridge):
     async def undo(self) -> CursorPosition:
         return self._answer(CursorPosition, "undo")
 
+    async def set_articulation(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        articulation: Articulation,
+        beat: BeatPosition | None,
+        remove: bool,
+    ) -> ArticulationSet:
+        return self._answer(
+            ArticulationSet,
+            "set_articulation",
+            start_measure,
+            end_measure,
+            staff,
+            articulation,
+            beat,
+            remove,
+        )
+
+    async def set_notehead(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        notehead: Notehead | int,
+        beat: BeatPosition | None,
+    ) -> NoteheadSet:
+        return self._answer(
+            NoteheadSet,
+            "set_notehead",
+            start_measure,
+            end_measure,
+            staff,
+            notehead,
+            beat,
+        )
+
+    async def add_line(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        line: LineType,
+        start_beat: BeatPosition | None = None,
+        end_beat: BeatPosition | None = None,
+    ) -> LineAdded:
+        return self._answer(
+            LineAdded,
+            "add_line",
+            start_measure,
+            end_measure,
+            staff,
+            line,
+            start_beat,
+            end_beat,
+        )
+
+    async def add_text(self, text: str, style: TextStyle) -> TextAdded:
+        return self._answer(TextAdded, "add_text", text, style)
+
+    async def set_clef(self, clef: Clef) -> ClefSet:
+        return self._answer(ClefSet, "set_clef", clef)
+
+    async def go_to_beat(self, beat: BeatPosition) -> CursorPosition:
+        return self._answer(CursorPosition, "go_to_beat", beat)
+
+    async def add_rest(
+        self, duration: Duration, advance_cursor: bool = True
+    ) -> RestAdded:
+        return self._answer(RestAdded, "add_rest", duration, advance_cursor)
+
+    async def add_tuplet(
+        self, pitches: list[int | None], actual: int, normal: int, unit: Duration
+    ) -> TupletAdded:
+        return self._answer(TupletAdded, "add_tuplet", pitches, actual, normal, unit)
+
+    async def set_tremolo(
+        self,
+        start_measure: int,
+        end_measure: int,
+        staff: int,
+        kind: TremoloKind,
+        strokes: int,
+        beat: BeatPosition | None,
+    ) -> TremoloSet:
+        return self._answer(
+            TremoloSet,
+            "set_tremolo",
+            start_measure,
+            end_measure,
+            staff,
+            kind,
+            strokes,
+            beat,
+        )
+
+    async def add_grace_notes(self, ornament: GraceOrnament) -> GraceNotesAdded:
+        return self._answer(GraceNotesAdded, "add_grace_notes", ornament)
+
+    async def add_sticking(self, sticking: list[str]) -> StickingAdded:
+        return self._answer(StickingAdded, "add_sticking", sticking)
+
+    async def write_passage(self, events: list[PassageEvent]) -> PassageWritten:
+        return self._answer(PassageWritten, "write_passage", events)
+
 
 # ── WebSocket doubles ────────────────────────────────────────────────
 
@@ -314,3 +484,17 @@ REMOTE_CONTROL_HANDSHAKE: tuple[dict[str, Any], ...] = (
     {"message": "response", "code": "kConnected"},
 )
 """What a Remote Control server replies during a fresh handshake, in order."""
+
+SIBELIUS_HANDSHAKE: tuple[dict[str, Any], ...] = ({"sessionToken": SESSION_TOKEN},)
+"""What Sibelius Connect replies to ``connect`` once the user allows it."""
+
+SIBELIUS_COMMANDS_RUN: dict[str, Any] = {
+    "message": "invokeCommandsResponse",
+    "result": True,
+}
+"""Sibelius Connect's reply to ``invokeCommands``."""
+
+
+def plugin_reply(value: Any) -> dict[str, Any]:
+    """Sibelius Connect's reply to ``invokePlugin`` for a method returning *value*."""
+    return {"message": "invokePluginResponse", "result": True, "return_value": value}

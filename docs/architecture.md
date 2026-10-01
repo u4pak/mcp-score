@@ -7,7 +7,7 @@
 mcp-score does three things for an AI assistant:
 
 1. **Score generation** -- the assistant writes a music21 Python script that exports MusicXML, openable in any notation software. In Claude Code the bundled `score-generate` skill drives this. In any other MCP client the `generate_score` tool runs the script and `score_generation_guide` (also served as the `score-generate` MCP prompt) supplies the same instructions
-2. **Live manipulation** via MCP server -- read from and write to a running score application (MuseScore Studio 4.4.2+, or experimentally Dorico) through a WebSocket bridge
+2. **Live manipulation** via MCP server -- read from and write to a running score application (MuseScore Studio 4.4.2+, or experimentally Dorico or Sibelius) through a WebSocket bridge
 3. **Rendering** -- the `render_score` tool exports PDF, PNG, MIDI, audio or MusicXML from a score file through the MuseScore command line; MuseScore must be installed but not running
 
 ## System diagram
@@ -34,18 +34,20 @@ mcp-score does three things for an AI assistant:
           |         |   base.py (ScoreBridge) registry.py |
           |         |   websocket.py (transport)          |
           |         |   musescore.py   remote_control.py  |
-          |         |                  dorico.py          |
+          |         |   sibelius.py    dorico.py          |
           |         | musescore/headless.py  mscore CLI   |
           |         +--------+---------------+------------+
           v                  |               |
 +----------------+  WebSocket|               |WebSocket
-| score-generate |  ws://:8765               |ws://:4560
-| Claude skill   |           |               |
-| writes music21 |  +--------v--------+  +---v---------------+
-| -> MusicXML    |  | MuseScore QML   |  | Dorico Remote     |
-+----------------+  | plugin          |  | Control (built-in,|
-                    | (plugin/)       |  | experimental)     |
-                    +-----------------+  +-------------------+
+| score-generate |  ws://:8765               |ws://:4560 (Dorico)
+| Claude skill   |  (MuseScore)              |ws://:1898 (Sibelius)
+| writes music21 |  +--------v--------+  +---v-----------------+
+| -> MusicXML    |  | MuseScore QML   |  | Dorico Remote       |
++----------------+  | plugin          |  | Control; Sibelius   |
+                    | (plugin/)       |  | Connect + ManuScript|
+                    +-----------------+  | plug-in (both       |
+                                         | experimental)       |
+                                         +---------------------+
 ```
 
 The server registers the tool modules: connection, analysis, manipulation, generation and rendering. Generation and rendering work on files and need no live connection.
@@ -62,6 +64,7 @@ mcp-score supports multiple score notation applications through a common bridge 
 ScoreBridge (ABC)             -- the operations every tool needs
 └── WebSocketBridge           -- connection lifecycle over a WebSocketTransport, one reconnect
     ├── MuseScoreBridge       -- the MuseScore QML plugin's command/params protocol
+    ├── SibeliusBridge        -- Sibelius Connect: command IDs and the ManuScript plug-in
     └── RemoteControlBridge   -- Remote Control handshake/command protocol
         └── DoricoBridge      -- Dorico defaults (port 4560)
 ```
@@ -72,6 +75,7 @@ ScoreBridge (ABC)             -- the operations every tool needs
 - `MuseScoreBridge` -- frames commands for the MuseScore plugin and maps the interface to plugin commands
 - `RemoteControlBridge` -- Remote Control protocol logic, kept separate from application defaults: handshake with session tokens, command formatting, barline mapping, and limitation messages
 - `DoricoBridge` -- thin subclass providing Dorico-specific defaults
+- `SibeliusBridge` -- Sibelius Connect's handshake and messages, with the cursor tracked on the Python side
 
 ### Bridge registry
 
@@ -99,22 +103,40 @@ Session tokens can be cached and reused for reconnection (the application skips 
 - Default port 4560, configurable in Dorico preferences
 - No plugin needed -- Dorico IS the server
 
+### Sibelius Connect (Sibelius)
+
+Sibelius 2024.3+ serves Sibelius Connect, a WebSocket API on port 1898 enabled on the Input Devices page of Sibelius's preferences. Its protocol is documented in the [ManuScript Language Guide](https://resources.avid.com/SupportFiles/Sibelius/2026.6/ManuScript_Language_Guide.pdf) (chapter 6) and differs from Dorico's despite a similar `connect` message:
+
+1. Client sends `connect` with `clientName`, `handshakeVersion` and the `plugins` it will call
+2. Sibelius asks the user to allow the connection and answers `{"sessionToken": ...}`
+3. The token, sent with a later `connect` instead of the plug-in list, skips the question while Sibelius keeps running
+
+After the handshake there are two messages. `invokeCommands` runs Sibelius command IDs (the menu commands listed in chapter 5 of the guide) on the current selection; they take no parameters. `invokePlugin` calls a method of a ManuScript plug-in with arguments and returns its result as JSON.
+
+Command IDs alone cannot reach a measure (`goto_bar` only opens a dialog), so `SibeliusBridge` uses commands where one does the job (`undo`, the `barline_*` commands) and the bundled `McpScoreBridge` plug-in (`sibelius/plugin/McpScoreBridge.plg`, installed with `mcp-score install-sibelius-plugin`) for everything that needs a position or a value: selecting bars and ranges, reading the score and the note at the cursor, notes, rehearsal marks, chord symbols, dynamics, key and time signatures, tempo, appending bars, transposing, articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal, glissandi), staff text, clefs, rests, tuplets, tremolos and buzz rolls, grace notes (flams, drags, ruffs), sticking, moving the cursor to any point in a measure (a beat, or a partial of one such as the "and" of 2 or the last note of a triplet), and writing a whole passage in one call. A passage goes to the plug-in as a list of event Dictionaries, one per note, chord or rest with its markings; `WritePassage` writes them in order, crossing bar lines, and stops at the first event it cannot write, naming it, so the events before it stay written. The operations from articulations on are `ScoreBridge` methods that refuse by default, so the MuseScore and Dorico bridges report them as not supported yet. ManuScript has no call that adds a rest, so the plug-in adds a note and deletes it, which leaves a rest of the same length; and since it may not add to a bar while iterating over it, it collects the notes for sticking before writing the letters. The plug-in keeps no state and never opens a dialog; the bridge tracks the cursor (measure, staff, position in the bar) and passes it to every call.
+
+Sibelius support is experimental: the bridge and plug-in follow the ManuScript Language Guide but have not been run against a real Sibelius.
+
 ## Capabilities and limitations
 
 Dorico's Remote Control WebSocket API is fundamentally a **command execution and UI state observation** layer. It can trigger any action the application can perform (equivalent to pressing menu items or key commands) and read the UI state. But it cannot read musical content or perform operations that require text input through popovers.
 
 ### What the WebSocket API can do
 
-| Capability                                                     |         MuseScore          |  Dorico (experimental)   |
-| -------------------------------------------------------------- | :------------------------: | :----------------------: |
-| Execute commands (undo, navigation, barlines, rehearsal marks) |            Yes             |           Yes            |
-| Get application status                                         |            Yes             |           Yes            |
-| Get selection properties                                       |            Yes             |           Yes            |
-| Set barlines                                                   |            Yes             |           Yes            |
-| Add rehearsal marks                                            |   Yes (with custom text)   | Yes (auto-numbered only) |
-| Navigate to measure                                            |            Yes             |           Yes            |
-| Read the element at the cursor                                 |    Yes (via QML plugin)    |            No            |
-| Read cursor position                                           | Yes (measure, beat, staff) | Limited (UI state only)  |
+| Capability                                                      |         MuseScore          |  Dorico (experimental)   |      Sibelius (experimental)      |
+| --------------------------------------------------------------- | :------------------------: | :----------------------: | :-------------------------------: |
+| Execute commands (undo, navigation, barlines, rehearsal marks)  |            Yes             |           Yes            |                Yes                |
+| Get application status                                          |            Yes             |           Yes            |       Responsiveness (ping)       |
+| Get selection properties                                        |            Yes             |           Yes            |    Yes (cursor, as MuseScore)     |
+| Set barlines                                                    |            Yes             |           Yes            | Yes (not dotted, endStartRepeat)  |
+| Add rehearsal marks                                             |   Yes (with custom text)   | Yes (auto-numbered only) | Yes (letters or numbers as given) |
+| Navigate to measure and staff                                   |            Yes             |       Measure only       |   Yes (via ManuScript plug-in)    |
+| Notes, chord symbols, dynamics, key/time signatures, tempo      |            Yes             |            No            |   Yes (via ManuScript plug-in)    |
+| Rests, tuplets, tremolos, grace notes, sticking, beat placement |             No             |            No            |   Yes (via ManuScript plug-in)    |
+| Many notes, rests and markings in one call                      |             No             |            No            |   Yes (via ManuScript plug-in)    |
+| Articulations, noteheads, lines, staff text, clefs              |             No             |            No            |   Yes (via ManuScript plug-in)    |
+| Read the element at the cursor                                  |    Yes (via QML plugin)    |            No            |   Yes (via ManuScript plug-in)    |
+| Read cursor position                                            | Yes (measure, beat, staff) | Limited (UI state only)  |    Yes (measure, beat, staff)     |
 
 ### What Dorico's API cannot do
 
@@ -140,16 +162,17 @@ Each module's docstring says what it is responsible for; the tools themselves ar
 ```
 src/mcp_score/
   __init__.py           Package root
-  cli.py                CLI entry point (serve, run, install, install-skill, install-plugin)
-  resources.py          Locate bundled files (skill directory, plugin directory)
+  cli.py                CLI entry point (serve, run, install, install-skill, install-plugin, install-sibelius-plugin)
+  resources.py          Locate bundled files (skill directory, plugin directories)
   server.py             create_server() builds the MCPServer and registers every tool module
   context.py            AppState and ScoreContext: what the server hands every tool
   guide.py              The score-generate skill assembled into one document for MCP clients
   tools/
     base.py             Shared tool plumbing: ToolError, score_tool, require_bridge(), navigate()
-    connection.py       Connect/disconnect MuseScore & Dorico, ping, score info
+    connection.py       Connect/disconnect MuseScore, Dorico & Sibelius, ping, score info
     analysis.py         read_passage, get_measure_content, get_selection_properties
     generate.py         generate_score, score_generation_guide (+ score-generate prompt)
+    guides.py           vdl_notehead_guide (+ vdl-noteheads prompt)
     manipulation.py     Live notes, dynamics, rehearsal marks, chords, barlines, keys, time, tempo, measures, transpose, undo
     render.py           render_score (export through the MuseScore command line)
   bridge/
@@ -159,6 +182,7 @@ src/mcp_score/
     remote_control.py   RemoteControlBridge -- Remote Control protocol layer
     musescore.py        MuseScoreBridge -- MuseScore plugin protocol
     dorico.py           DoricoBridge -- thin subclass (Dorico defaults, experimental)
+    sibelius.py         SibeliusBridge -- Sibelius Connect protocol and plug-in calls (experimental)
     registry.py         BridgeRegistry -- the bridges and which one is active
   musescore/
     paths.py            Where MuseScore keeps user files (plugins directory)
@@ -166,6 +190,11 @@ src/mcp_score/
     headless.py         Headless rendering through the MuseScore command line
     plugin/             MuseScore plugin: mcp-score-bridge.qml (server, dispatch) and its JS modules
                         (constants, score, reading, editing, selection, sequence)
+  guides/
+    vdl.md              VDL battery notehead guide, from VDL Maps 7.0a (used with permission)
+  sibelius/
+    paths.py            Where Sibelius keeps user plug-ins (per platform)
+    plugin/             McpScoreBridge.plg: the ManuScript plug-in Sibelius Connect calls
 
 .claude/skills/
   score-generate/       Claude Code skill for score generation
@@ -196,12 +225,14 @@ music21 (MIT, Python) handles transposing instruments, voice leading, and MusicX
 
 ### WebSocket bridges for live manipulation
 
-Both supported applications use WebSocket for communication, but the protocols differ:
+Every supported application uses WebSocket for communication, but the protocols differ:
 
 - **MuseScore**: QML plugin runs inside MuseScore Studio 4.4.2+ and opens a WebSocket server on port 8765 with MuseScore's built-in `api.websocketserver` (4.4 dropped the `QtWebSockets` QML module; 4.4.2 added the replacement, so older versions are not supported). JSON messages with `command` and `params` fields. Custom protocol -- implemented directly in `MuseScoreBridge`.
 - **Dorico** (experimental): Uses Dorico's "Remote Control" protocol with `message`/`commandName` fields and session token handshake. Protocol logic lives in `RemoteControlBridge`; the thin `DoricoBridge` subclass provides Dorico's defaults (port, name).
 
-Sibelius was removed as out of scope; LilyPond is out of scope for now.
+- **Sibelius** (experimental): Sibelius Connect (Sibelius 2024.3+) runs command IDs and calls the bundled ManuScript plug-in. `SibeliusBridge` implements the handshake and both messages directly on `WebSocketBridge`, since the protocol is not Dorico's.
+
+LilyPond is out of scope for now.
 
 ### Verified against real MuseScore in CI
 

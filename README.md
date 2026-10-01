@@ -25,16 +25,17 @@ The assistant reads the live score, applies musical judgement, and writes the ar
 ## What it does
 
 - **Generate scores.** The assistant writes a [music21](https://www.music21.org/) script that exports MusicXML, which opens in MuseScore, Dorico, or any notation app. In Claude Code this is driven by the bundled `score-generate` skill. In other MCP clients, the `generate_score` tool runs the script and `score_generation_guide` supplies the same instructions.
-- **Edit live scores.** MCP tools connect to a running MuseScore and read passages, add notes, dynamics and chord symbols, set barlines, keys, time signatures and tempo, append measures, transpose, and undo.
+- **Edit live scores.** MCP tools connect to a running MuseScore and read passages, add notes, dynamics and chord symbols, set barlines, keys, time signatures and tempo, append measures, transpose, and undo. With Sibelius they also add articulations, noteheads, lines (slurs, hairpins, trills, octave lines, pedal), staff text, clefs, rests, tuplets, tremolos and buzz rolls, flams, drags and ruffs, and sticking, and place them on any beat or partial (the "and" of 2, a triplet's last note). A whole passage of notes, rests and their markings can go in with one call: enough to score an indoor percussion show. A bundled guide lists the Virtual Drumline (VDL) battery noteheads.
 - **Render.** The `render_score` tool exports PDF, PNG, MIDI, audio or MusicXML from a score file through the MuseScore command line; MuseScore must be installed but not running.
 
 ## Supported applications
 
-| Application      | Versions        | Status                                                                                                                          |
-| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| MuseScore Studio | 4.4.2 and later | Supported; CI tests the oldest supported line, a middle release and the newest. Earlier versions lack the plugin WebSocket API. |
-| Dorico           | 4 and later     | Experimental. Undocumented Remote Control API, command-only, not verified against a running instance.                           |
-| Any notation app | MusicXML import | Generated scores open anywhere MusicXML does.                                                                                   |
+| Application      | Versions         | Status                                                                                                                          |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| MuseScore Studio | 4.4.2 and later  | Supported; CI tests the oldest supported line, a middle release and the newest. Earlier versions lack the plugin WebSocket API. |
+| Dorico           | 4 and later      | Experimental. Undocumented Remote Control API, command-only, not verified against a running instance.                           |
+| Sibelius         | 2024.3 and later | Experimental. Sibelius Connect plus a bundled ManuScript plug-in, not verified against a running instance.                      |
+| Any notation app | MusicXML import  | Generated scores open anywhere MusicXML does.                                                                                   |
 
 ## Install
 
@@ -49,8 +50,9 @@ uv tool install mcp-score-server
 Then:
 
 ```bash
-mcp-score install-plugin   # MuseScore plugin, for live editing
-mcp-score install-skill    # score-generate skill, for Claude Code
+mcp-score install-plugin            # MuseScore plugin, for live editing
+mcp-score install-sibelius-plugin   # Sibelius plug-in (experimental)
+mcp-score install-skill             # score-generate skill, for Claude Code
 ```
 
 ## Connect your MCP client

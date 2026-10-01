@@ -8,11 +8,13 @@ nothing is registered by importing a module.
 """
 
 from mcp_score.tools.base import (
+    BEAT_FORMAT,
     NOT_CONNECTED,
     Tool,
     ToolError,
     ToolModule,
     navigate,
+    parse_beat,
     require_bridge,
     require_measure,
     require_measure_range,
@@ -20,11 +22,13 @@ from mcp_score.tools.base import (
 )
 
 __all__ = [
+    "BEAT_FORMAT",
     "NOT_CONNECTED",
     "Tool",
     "ToolError",
     "ToolModule",
     "navigate",
+    "parse_beat",
     "require_bridge",
     "require_measure",
     "require_measure_range",

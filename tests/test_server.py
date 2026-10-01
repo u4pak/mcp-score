@@ -19,6 +19,7 @@ import pytest
 from mcp_score.server import SERVER_NAME, create_server
 from mcp_score.tools import NOT_CONNECTED, ToolError
 from mcp_score.tools.generate import PROMPT_NAME
+from mcp_score.tools.guides import VDL_PROMPT_NAME
 
 if TYPE_CHECKING:
     from mcp_score.bridge import BridgeRegistry
@@ -31,6 +32,8 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "disconnect_from_musescore",
         "connect_to_dorico",
         "disconnect_from_dorico",
+        "connect_to_sibelius",
+        "disconnect_from_sibelius",
         "get_live_score_info",
         "ping_score_app",
         # analysis
@@ -48,10 +51,22 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "set_live_tempo",
         "append_live_measures",
         "transpose_passage",
+        "set_live_articulation",
+        "set_live_notehead",
+        "add_live_line",
+        "add_live_text",
+        "set_live_clef",
+        "add_live_rest",
+        "add_live_tuplet",
+        "set_live_tremolo",
+        "add_live_grace_notes",
+        "add_live_sticking",
+        "write_live_passage",
         "undo_last_action",
         # generate
         "generate_score",
         "score_generation_guide",
+        "vdl_notehead_guide",
         # render
         "render_score",
     }
@@ -105,7 +120,7 @@ class TestCreateServer:
             assert not not_snake_case, (tool.name, not_snake_case)
 
     @pytest.mark.anyio()
-    async def test_create_server_registers_prompt_under_hyphenated_name(
+    async def test_create_server_registers_prompts_under_hyphenated_names(
         self,
     ) -> None:
         # Arrange
@@ -115,7 +130,7 @@ class TestCreateServer:
         prompt_names = [prompt.name for prompt in await server.list_prompts()]
 
         # Assert
-        assert prompt_names == [PROMPT_NAME]
+        assert sorted(prompt_names) == sorted([PROMPT_NAME, VDL_PROMPT_NAME])
 
     @pytest.mark.anyio()
     async def test_lifespan_yields_state_holding_given_registry(

@@ -4,14 +4,14 @@
 
 > Reference -- every MCP tool and prompt the server provides, and the CLI.
 
-Every tool publishes the schema of its result, described under the tool and, for the result types tools share, in the last section. A tool that cannot do what was asked fails with an MCP tool error whose message says why. Connection, analysis and manipulation tools need a connected application (MuseScore, or experimentally Dorico); generation and rendering tools work on files.
+Every tool publishes the schema of its result, described under the tool and, for the result types tools share, in the last section. A tool that cannot do what was asked fails with an MCP tool error whose message says why. Connection, analysis and manipulation tools need a connected application (MuseScore, or experimentally Dorico or Sibelius); generation and rendering tools work on files.
 
 ## Connection tools
 
 Connection tools: which application the server talks to.
 
 Each application has its own connect and disconnect pair, and connecting
-to one disconnects the other. The information and ping tools work with
+to one disconnects any other. The information and ping tools work with
 whichever application is connected.
 
 ### `connect_to_musescore`
@@ -79,9 +79,44 @@ No parameters.
 | ------------- | ----- | ----------- |
 | `application` | `str` |             |
 
+### `connect_to_sibelius`
+
+Connect to a running Sibelius via Sibelius Connect (experimental).
+
+Sibelius support is experimental: it has not been verified against a
+running Sibelius. Sibelius 2024.3 and later serve Sibelius Connect
+(enabled, and its port set, on the Input Devices page of Sibelius's
+preferences). The MCP Score Bridge plug-in (`mcp-score install-sibelius-plugin`)
+must be installed. Sibelius asks the user to allow the first
+connection. Connecting disconnects any other application.
+
+| Parameter | Type  | Default       | Description                                                 |
+| --------- | ----- | ------------- | ----------------------------------------------------------- |
+| `host`    | `str` | `"localhost"` | WebSocket host (default: localhost).                        |
+| `port`    | `int` | `1898`        | WebSocket port (default: 1898, Sibelius Connect's default). |
+
+**Returns** `Connected`.
+
+| Field         | Type  | Description |
+| ------------- | ----- | ----------- |
+| `application` | `str` |             |
+| `uri`         | `str` |             |
+
+### `disconnect_from_sibelius`
+
+Disconnect from Sibelius.
+
+No parameters.
+
+**Returns** `Disconnected`.
+
+| Field         | Type  | Description |
+| ------------- | ----- | ----------- |
+| `application` | `str` |             |
+
 ### `get_live_score_info`
 
-Get information about the score open in MuseScore.
+Get information about the score open in MuseScore or Sibelius.
 
 Title, parts, measure count and the opening key and time signatures.
 Not available with Dorico, whose API cannot describe the score.
@@ -115,10 +150,11 @@ No parameters.
 
 Analysis tools: read from the connected application.
 
-MuseScore reports what sits under its cursor; the tools move the cursor
-measure by measure, so a passage comes back as one entry per measure with
-the element at the start of that measure. Dorico's Remote Control API has
-no cursor: the only thing it can read is the selection's properties.
+MuseScore and Sibelius report what sits under the cursor; the tools move
+the cursor measure by measure, so a passage comes back as one entry per
+measure with the element at the start of that measure. Dorico's Remote
+Control API has no cursor: the only thing it can read is the selection's
+properties.
 
 ### `read_passage`
 
@@ -127,7 +163,8 @@ Read a range of measures in the live score, one entry per measure.
 For each measure MuseScore reports the cursor position (measure, staff,
 voice, beat, tick) and the element at the start of the measure on that
 staff: its type, and for a note or chord its pitches and duration. It
-does not list every element in the measure. Not available with Dorico,
+does not list every element in the measure. Sibelius reports the same
+for the note, chord or rest in voice 1. Not available with Dorico,
 which cannot read score content.
 
 | Parameter       | Type          | Default    | Description                                                |
@@ -148,12 +185,12 @@ which cannot read score content.
 
 ### `get_measure_content`
 
-Select one measure of one staff in MuseScore and report the selection.
+Select one measure of one staff and report the selection.
 
 The selection becomes visible in the score, ready for a manual edit;
 the result names the selected measure and staff, not its content (use
-read_passage for that). Not available with Dorico, which cannot move to
-a staff or select a measure.
+read_passage for that). Not available with Dorico, which cannot move
+to a staff or select a measure.
 
 | Parameter | Type  | Default    | Description                          |
 | --------- | ----- | ---------- | ------------------------------------ |
@@ -172,16 +209,17 @@ a staff or select a measure.
 
 Get properties of the current selection in the connected application.
 
-MuseScore reports the cursor position (measure, beat, staff, element).
-Dorico reports the names, types and values of every property of the
-selected items, which is the closest its API gets to reading the score.
+MuseScore and Sibelius report the cursor position (measure, beat,
+staff, element). Dorico reports the names, types and values of every
+property of the selected items, which is the closest its API gets to
+reading the score.
 
 No parameters.
 
 **Returns** `SelectionProperties`: What the application reports about the current selection.
 
-MuseScore reports the cursor position; Dorico reports the properties
-of the selected items as they come from its API.
+MuseScore and Sibelius report the cursor position; Dorico reports the
+properties of the selected items as they come from its API.
 
 | Field        | Type                       | Description |
 | ------------ | -------------------------- | ----------- |
@@ -193,12 +231,19 @@ of the selected items as they come from its API.
 
 Manipulation tools: change the score in the connected application.
 
+Tools that take a `beat` accept any point in a measure, not just beats:
+beats count in the time signature's beat unit, and partials are written
+the way they are counted ("2&", "3e", "1trip") or as
+"beat:partial/subdivision" for any tuplet.
+
 Every tool that takes a measure moves there first and refuses to continue
 if the application cannot get there, so a change never lands in the wrong
 place. What an application cannot do comes back as its own explanation:
 Dorico's Remote Control API triggers commands but cannot type into
-popovers or move the selection, so most of these tools work with MuseScore
-only.
+popovers or move the selection, so most of these tools work with
+MuseScore and Sibelius only. Articulations, noteheads, lines, staff text,
+clefs, rests, tuplets, tremolos, grace notes, sticking and placing things
+on a beat work with Sibelius only for now.
 
 ### `add_live_note`
 
@@ -208,13 +253,14 @@ Consecutive calls on the same measure append notes one after another,
 since the application advances its cursor after each note. Not
 available with Dorico.
 
-| Parameter     | Type  | Default    | Description                                                        |
-| ------------- | ----- | ---------- | ------------------------------------------------------------------ |
-| `measure`     | `int` | (required) | Measure number (1-indexed).                                        |
-| `pitch`       | `int` | (required) | MIDI pitch (60 = middle C).                                        |
-| `numerator`   | `int` | `1`        | Duration numerator (default 1, with denominator 4 = quarter note). |
-| `denominator` | `int` | `4`        | Duration denominator (default 4).                                  |
-| `staff`       | `int` | `0`        | Staff index (0-indexed, default: 0).                               |
+| Parameter     | Type                 | Default    | Description                                                                                                                                                                |
+| ------------- | -------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`                | (required) | Measure number (1-indexed).                                                                                                                                                |
+| `pitch`       | `int`                | (required) | MIDI pitch (60 = middle C). On a percussion staff the pitch picks the instrument, as the staff's drum map says.                                                            |
+| `numerator`   | `int`                | `1`        | Duration numerator (default 1, with denominator 4 = quarter note).                                                                                                         |
+| `denominator` | `int`                | `4`        | Duration denominator (default 4).                                                                                                                                          |
+| `staff`       | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                       |
+| `beat`        | `int \| str \| None` | `None`     | Start here instead of where the last note ended: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Sibelius only. |
 
 **Returns** `NoteAdded`: A note was added; the position is where the cursor went afterwards.
 
@@ -229,8 +275,10 @@ available with Dorico.
 
 Add a rehearsal mark to a measure in the live score.
 
-Dorico numbers rehearsal marks itself and ignores the text (the result
-says so in a warning).
+Dorico numbers rehearsal marks itself and ignores the text; Sibelius
+writes one or two letters or a number as given and numbers anything
+else itself. The result says so in a warning when the text was not
+kept.
 
 | Parameter | Type  | Default    | Description                                   |
 | --------- | ----- | ---------- | --------------------------------------------- |
@@ -267,13 +315,16 @@ Not available with Dorico.
 
 Add a dynamic marking to a measure in the live score.
 
-Not available with Dorico.
+Not available with Dorico. Sibelius writes dynamics spelled with the
+letters p, m, f, r, s, z and n, so "fp", "sfz", "rfz" and "n"
+(niente) work too.
 
-| Parameter | Type  | Default    | Description                                              |
-| --------- | ----- | ---------- | -------------------------------------------------------- |
-| `measure` | `int` | (required) | Measure number (1-indexed).                              |
-| `dynamic` | `str` | (required) | Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz". |
-| `staff`   | `int` | `0`        | Staff index (0-indexed, default: 0).                     |
+| Parameter | Type                 | Default    | Description                                                                                                                                                                     |
+| --------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure` | `int`                | (required) | Measure number (1-indexed).                                                                                                                                                     |
+| `dynamic` | `str`                | (required) | Dynamic such as "pp", "p", "mp", "mf", "f", "ff", "sfz".                                                                                                                        |
+| `staff`   | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                            |
+| `beat`    | `int \| str \| None` | `None`     | Place it here instead of at the start of the measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Sibelius only. |
 
 **Returns** `DynamicAdded`.
 
@@ -286,10 +337,10 @@ Not available with Dorico.
 
 Set the bar line at the end of a measure in the live score.
 
-| Parameter      | Type  | Default    | Description                                                                                                                                                                                                                                                                                                       |
-| -------------- | ----- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `measure`      | `int` | (required) | Measure number (1-indexed).                                                                                                                                                                                                                                                                                       |
-| `barline_type` | `str` | (required) | One of "normal", "double", "final", "dashed", "dotted", "tick", "short", "startRepeat", "endRepeat" or "endStartRepeat". "startRepeat" marks the start of this measure; "endStartRepeat" ends a repeat here and starts one in the next measure. Dorico supports "double", "final", "startRepeat" and "endRepeat". |
+| Parameter      | Type  | Default    | Description                                                                                                                                                                                                                                                                                                                                                                |
+| -------------- | ----- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`      | `int` | (required) | Measure number (1-indexed).                                                                                                                                                                                                                                                                                                                                                |
+| `barline_type` | `str` | (required) | One of "normal", "double", "final", "dashed", "dotted", "tick", "short", "startRepeat", "endRepeat" or "endStartRepeat". "startRepeat" marks the start of this measure; "endStartRepeat" ends a repeat here and starts one in the next measure. Dorico supports "double", "final", "startRepeat" and "endRepeat"; Sibelius supports all but "dotted" and "endStartRepeat". |
 
 **Returns** `BarlineSet`.
 
@@ -395,6 +446,304 @@ unchanged. Not available with Dorico, which cannot select a range.
 | `semitones` | `int` |                            |
 | `notes`     | `int` | How many notes were moved. |
 
+### `set_live_articulation`
+
+Add an articulation to the notes of a passage in the live score.
+
+Every note and chord in the measures gets the articulation, or only
+those starting on `beat` in each measure. Rests are left alone. Sibelius
+only for now.
+
+| Parameter       | Type                 | Default    | Description                                                                                                                                                               |
+| --------------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`                | (required) | First measure (1-indexed).                                                                                                                                                |
+| `end_measure`   | `int`                | (required) | Last measure (inclusive, 1-indexed).                                                                                                                                      |
+| `articulation`  | `Articulation`       | (required) | The articulation; "fermata" is the usual pause.                                                                                                                           |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                      |
+| `beat`          | `int \| str \| None` | `None`     | Only notes starting here in each measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit for every note. |
+| `remove`        | `bool`               | `false`    | Take the articulation off instead of adding it.                                                                                                                           |
+
+**Returns** `ArticulationSet`.
+
+| Field           | Type                   | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `articulation`  | `Articulation`         |                                                                 |
+| `removed`       | `bool`                 | True when the articulation was taken off rather than added.     |
+| `start_measure` | `int`                  |                                                                 |
+| `end_measure`   | `int`                  |                                                                 |
+| `staff`         | `int`                  |                                                                 |
+| `beat`          | `BeatPosition \| None` | The position the change was limited to, or None for every note. |
+| `notes`         | `int`                  | How many notes and chords were changed.                         |
+
+### `set_live_notehead`
+
+Change the notehead of the notes of a passage in the live score.
+
+Every note in the measures gets the notehead, or only the notes of
+chords starting on `beat` in each measure; "normal" restores the usual
+one. Sibelius only for now.
+
+| Parameter       | Type                 | Default    | Description                                                                                                                                                                                                        |
+| --------------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `start_measure` | `int`                | (required) | First measure (1-indexed).                                                                                                                                                                                         |
+| `end_measure`   | `int`                | (required) | Last measure (inclusive, 1-indexed).                                                                                                                                                                               |
+| `notehead`      | `Notehead \| int`    | (required) | The notehead shape ("slash" for rhythm slashes, "cross" for ghost notes and percussion), or Sibelius's notehead number (0-127), which percussion templates such as VDL use to pick sounds; see vdl_notehead_guide. |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                                                               |
+| `beat`          | `int \| str \| None` | `None`     | Only notes starting here in each measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit for every note.                                          |
+
+**Returns** `NoteheadSet`.
+
+| Field           | Type                   | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `notehead`      | `Notehead \| int`      | The notehead, by name or by the application's notehead number.  |
+| `start_measure` | `int`                  |                                                                 |
+| `end_measure`   | `int`                  |                                                                 |
+| `staff`         | `int`                  |                                                                 |
+| `beat`          | `BeatPosition \| None` | The position the change was limited to, or None for every note. |
+| `notes`         | `int`                  | How many noteheads were changed (each note of a chord counts).  |
+
+### `add_live_line`
+
+Add a line from one measure to another in the live score.
+
+Slurs, hairpins (crescendo, and diminuendo or decrescendo, which are
+the same), trills, octave lines, pedal lines and glissandi. Without
+beats the line runs from the start of the first measure to the end of
+the last; with them, a hairpin can swell over a single beat. Sibelius
+only for now.
+
+| Parameter       | Type                 | Default    | Description                                                                                                                                                                            |
+| --------------- | -------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`                | (required) | Measure the line starts in (1-indexed).                                                                                                                                                |
+| `end_measure`   | `int`                | (required) | Measure the line ends in (inclusive, 1-indexed).                                                                                                                                       |
+| `line`          | `LineType`           | (required) | The kind of line.                                                                                                                                                                      |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                                   |
+| `start_beat`    | `int \| str \| None` | `None`     | Where in the first measure the line starts: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit to start with the measure. |
+| `end_beat`      | `int \| str \| None` | `None`     | The beat or partial of the last measure the line ends with (it ends where that one ends), in the same form. Omit to end with the measure.                                              |
+
+**Returns** `LineAdded`.
+
+| Field           | Type                   | Description                                                            |
+| --------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `line`          | `LineType`             |                                                                        |
+| `start_measure` | `int`                  |                                                                        |
+| `end_measure`   | `int`                  |                                                                        |
+| `staff`         | `int`                  |                                                                        |
+| `start_beat`    | `BeatPosition \| None` | Where the line starts, or None for the start of the measure.           |
+| `end_beat`      | `BeatPosition \| None` | The beat or partial the line ends with, or None for the measure's end. |
+
+### `add_live_text`
+
+Add staff text to a measure in the live score.
+
+Technique text for playing instructions ("pizz.", "con sord."),
+expression text for character ("dolce", "espress."), or plain or boxed
+text. Sibelius only for now.
+
+| Parameter | Type                 | Default       | Description                                                                                                                                                      |
+| --------- | -------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure` | `int`                | (required)    | Measure number (1-indexed).                                                                                                                                      |
+| `text`    | `str`                | (required)    | The text to write.                                                                                                                                               |
+| `style`   | `TextStyle`          | `"technique"` | technique, expression, plain or boxed (default: technique).                                                                                                      |
+| `staff`   | `int`                | `0`           | Staff index (0-indexed, default: 0).                                                                                                                             |
+| `beat`    | `int \| str \| None` | `None`        | Place it here instead of at the start of the measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
+
+**Returns** `TextAdded`.
+
+| Field     | Type        | Description |
+| --------- | ----------- | ----------- |
+| `text`    | `str`       |             |
+| `style`   | `TextStyle` |             |
+| `measure` | `int`       |             |
+| `staff`   | `int`       |             |
+
+### `set_live_clef`
+
+Change the clef from a measure onward in the live score.
+
+Sibelius only for now.
+
+| Parameter | Type   | Default    | Description                                            |
+| --------- | ------ | ---------- | ------------------------------------------------------ |
+| `measure` | `int`  | (required) | Measure number (1-indexed).                            |
+| `clef`    | `Clef` | (required) | The clef; "treble_8vb" is the tenor-voice treble clef. |
+| `staff`   | `int`  | `0`        | Staff index (0-indexed, default: 0).                   |
+
+**Returns** `ClefSet`.
+
+| Field     | Type   | Description |
+| --------- | ------ | ----------- |
+| `clef`    | `Clef` |             |
+| `measure` | `int`  |             |
+| `staff`   | `int`  |             |
+
+### `add_live_rest`
+
+Add a rest in the live score, where the last note or rest ended.
+
+Use it between add_live_note calls to write rhythms with rests; the
+cursor advances past the rest. Sibelius only for now.
+
+| Parameter     | Type                 | Default    | Description                                                                                                                                                 |
+| ------------- | -------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`                | (required) | Measure number (1-indexed).                                                                                                                                 |
+| `numerator`   | `int`                | `1`        | Duration numerator (default 1, with denominator 4 = quarter rest).                                                                                          |
+| `denominator` | `int`                | `4`        | Duration denominator (default 4).                                                                                                                           |
+| `staff`       | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                        |
+| `beat`        | `int \| str \| None` | `None`     | Start here instead of where the last note ended: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
+
+**Returns** `RestAdded`: A rest was added; the position is where the cursor went afterwards.
+
+| Field      | Type       | Description                 |
+| ---------- | ---------- | --------------------------- |
+| `measure`  | `int`      | Measure number (1-indexed). |
+| `staff`    | `int`      | Staff index (0-indexed).    |
+| `duration` | `Duration` |                             |
+
+### `add_live_tuplet`
+
+Add a tuplet (triplet, sextuplet, quintuplet...) in the live score.
+
+`actual` notes of the given value take the time of `normal` of them,
+starting where the last note ended; the cursor advances past the
+tuplet. The defaults make an eighth-note triplet. Sibelius only for
+now.
+
+| Parameter     | Type                 | Default    | Description                                                                                                                                                 |
+| ------------- | -------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`     | `int`                | (required) | Measure number (1-indexed).                                                                                                                                 |
+| `pitches`     | `list[int \| None]`  | (required) | One MIDI pitch per note, or null for a rest; exactly `actual` of them.                                                                                      |
+| `actual`      | `int`                | `3`        | Notes in the tuplet (3 for a triplet, 6 for a sextuplet).                                                                                                   |
+| `normal`      | `int`                | `2`        | Notes of the same value it takes the time of (2 for a triplet, 4 for a sextuplet).                                                                          |
+| `numerator`   | `int`                | `1`        | Note value numerator (default 1).                                                                                                                           |
+| `denominator` | `int`                | `8`        | Note value denominator (default 8: eighth notes).                                                                                                           |
+| `staff`       | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                        |
+| `beat`        | `int \| str \| None` | `None`     | Start here instead of where the last note ended: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
+
+**Returns** `TupletAdded`: A tuplet was filled; the position is where the cursor went afterwards.
+
+| Field     | Type       | Description                                                            |
+| --------- | ---------- | ---------------------------------------------------------------------- |
+| `measure` | `int`      | Measure number (1-indexed).                                            |
+| `staff`   | `int`      | Staff index (0-indexed).                                               |
+| `actual`  | `int`      | Notes in the tuplet (3 in a triplet).                                  |
+| `normal`  | `int`      | Notes of the same value the tuplet takes the time of (2 in a triplet). |
+| `unit`    | `Duration` | The value of each note in the tuplet.                                  |
+| `notes`   | `int`      | How many notes and rests were written.                                 |
+
+### `set_live_tremolo`
+
+Add tremolos (rolls) to the notes of a passage in the live score.
+
+"single" puts strokes on each note's stem (three for an unmeasured
+roll, fewer for measured diddles), "buzz" a z on the stem for a buzz
+roll, and "double" strokes between each note and the next, for mallet
+and timpani rolls between two pitches (the two notes need the same
+length). strokes 0 removes tremolos. Sibelius only for now.
+
+| Parameter       | Type                 | Default    | Description                                                                                                                                                               |
+| --------------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_measure` | `int`                | (required) | First measure (1-indexed).                                                                                                                                                |
+| `end_measure`   | `int`                | (required) | Last measure (inclusive, 1-indexed).                                                                                                                                      |
+| `kind`          | `TremoloKind`        | `"single"` | single, double or buzz (default: single).                                                                                                                                 |
+| `strokes`       | `int`                | `3`        | Tremolo strokes, 0 to 7 (default 3); ignored for buzz.                                                                                                                    |
+| `staff`         | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                                                      |
+| `beat`          | `int \| str \| None` | `None`     | Only notes starting here in each measure: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). Omit for every note. |
+
+**Returns** `TremoloSet`.
+
+| Field           | Type                   | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `kind`          | `TremoloKind`          |                                                                 |
+| `strokes`       | `int`                  | Tremolo strokes (0 removes them); -1 for a buzz roll.           |
+| `start_measure` | `int`                  |                                                                 |
+| `end_measure`   | `int`                  |                                                                 |
+| `staff`         | `int`                  |                                                                 |
+| `beat`          | `BeatPosition \| None` | The position the change was limited to, or None for every note. |
+| `notes`         | `int`                  | How many notes and chords were changed.                         |
+
+### `add_live_grace_notes`
+
+Add a flam, drag or ruff before a note in the live score.
+
+A flam is one slashed eighth-note grace note, a drag two and a ruff
+three sixteenth-note grace notes, all on the note's line. The note
+must already be there. Sibelius only for now.
+
+| Parameter  | Type            | Default    | Description                                                                                                                                   |
+| ---------- | --------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`  | `int`           | (required) | Measure number (1-indexed).                                                                                                                   |
+| `ornament` | `GraceOrnament` | (required) | flam, drag or ruff.                                                                                                                           |
+| `beat`     | `int \| str`    | `1`        | Where the note starts (default 1): a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
+| `staff`    | `int`           | `0`        | Staff index (0-indexed, default: 0).                                                                                                          |
+
+**Returns** `GraceNotesAdded`.
+
+| Field      | Type            | Description                      |
+| ---------- | --------------- | -------------------------------- |
+| `ornament` | `GraceOrnament` |                                  |
+| `measure`  | `int`           |                                  |
+| `staff`    | `int`           |                                  |
+| `notes`    | `int`           | How many grace notes were added. |
+
+### `add_live_sticking`
+
+Write sticking (R, L...) under the notes of the live score.
+
+One letter or group per note, from the start of the measure (or
+`beat`) on, continuing into the next measures until the sticking runs
+out. Separate groups with spaces ("R L R R L L", or "RH LH"); without
+spaces each character is one note ("RLRRLRLL"). Sibelius writes it as
+lyrics, the usual way to engrave sticking. Sibelius only for now.
+
+| Parameter  | Type                 | Default    | Description                                                                                                                           |
+| ---------- | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure`  | `int`                | (required) | Measure number (1-indexed).                                                                                                           |
+| `sticking` | `str`                | (required) | The sticking, as described above.                                                                                                     |
+| `staff`    | `int`                | `0`        | Staff index (0-indexed, default: 0).                                                                                                  |
+| `beat`     | `int \| str \| None` | `None`     | Start under the note here: a beat (2), a counted partial ("2&", "2e", "2a", "2trip", "2let") or "beat:partial/subdivision" ("4:3/5"). |
+
+**Returns** `StickingAdded`.
+
+| Field      | Type        | Description                                                             |
+| ---------- | ----------- | ----------------------------------------------------------------------- |
+| `sticking` | `list[str]` | The letters, one per note, as written under the notes.                  |
+| `measure`  | `int`       |                                                                         |
+| `staff`    | `int`       |                                                                         |
+| `notes`    | `int`       | How many notes got a letter; fewer than the letters when notes ran out. |
+
+### `write_live_passage`
+
+Write a whole passage of notes, rests and markings in one call.
+
+The fast way to write rhythms: each event is a note (`pitch`), a chord
+(a list of pitches) or a rest (`pitch` null) with a `duration`, and may
+carry a notehead (shape or VDL notehead number), articulations, a
+tremolo or buzz, a flam/drag/ruff, a sticking letter and a dynamic.
+Events start at the beginning of `measure` and follow each other,
+crossing bar lines; an event with `measure` and/or `beat` ("2&",
+"1trip", 3) jumps there first. Consecutive events with the same
+`tuplet` ratio and duration form tuplets: three events of 1/8 with
+tuplet {actual: 3, normal: 2} are an eighth-note triplet. The cursor
+ends after the passage, so add_live_note or another passage continues
+from there. If an event cannot be written, the error names it and the
+events before it stay written. Sibelius only for now.
+
+| Parameter | Type                 | Default    | Description                                |
+| --------- | -------------------- | ---------- | ------------------------------------------ |
+| `measure` | `int`                | (required) | Measure the passage starts in (1-indexed). |
+| `events`  | `list[PassageEvent]` | (required) | The notes, chords and rests, in order.     |
+| `staff`   | `int`                | `0`        | Staff index (0-indexed, default: 0).       |
+
+**Returns** `PassageWritten`: A passage was written; the position is where the cursor went afterwards.
+
+| Field     | Type  | Description                                                     |
+| --------- | ----- | --------------------------------------------------------------- |
+| `measure` | `int` | Measure number (1-indexed).                                     |
+| `staff`   | `int` | Staff index (0-indexed).                                        |
+| `events`  | `int` | How many events (notes, chords and rests) were written.         |
+| `notes`   | `int` | How many noteheads were written, counting each note of a chord. |
+
 ### `undo_last_action`
 
 Undo the last change in the connected application.
@@ -471,6 +820,35 @@ No parameters.
 
 Load the score-generate instructions (music21 conventions, instrument reference and template) before generating a score with generate_score.
 
+## Guides tools
+
+Reference guides: notation knowledge an assistant reads before writing.
+
+The VDL notehead guide (`guides/vdl.md`) says which notehead plays
+each sound of the Virtual Drumline battery instruments in Sibelius.
+
+### `vdl_notehead_guide`
+
+Return the VDL (Virtual Drumline) notehead guide for the drumline battery.
+
+Read this before writing or editing snare, tenor, bass drum or cymbal
+line parts in a Sibelius score built on the VDL template. VDL picks
+each sound (left or right hand, hit, shot, rim, dread, rod, crush,
+roll...) by notehead number, and many of those noteheads look alike;
+the guide lists the number for every sound, to pass to
+set_live_notehead, and which sounds take a buzz or tremolo strokes.
+Takes no parameters.
+
+Returns the guide as Markdown.
+
+No parameters.
+
+**Returns** `str`.
+
+### Prompt `vdl-noteheads`
+
+Load the Virtual Drumline notehead numbers for the battery before writing drumline parts in Sibelius.
+
 ## Render tools
 
 Rendering tools: export score files through the MuseScore command line.
@@ -515,6 +893,32 @@ An application's reply passed on as it came, for data with no fixed shape.
 
 Whatever fields the application sends.
 
+### `Articulation`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
+### `BeatPosition`
+
+A point in a measure: a beat, or a partial of one.
+
+Beats count in the time signature's beat unit (quarters in 4/4,
+eighths in 6/8). A beat is split into `subdivision` equal partials and
+`partial` picks one, so the "and" of 2 is beat 2, partial 2 of 2, the
+"a" of 3 is beat 3, partial 4 of 4, and the last note of a triplet on
+beat 1 is beat 1, partial 3 of 3.
+
+| Field         | Type  | Description                                     |
+| ------------- | ----- | ----------------------------------------------- |
+| `beat`        | `int` | The beat (1-indexed).                           |
+| `subdivision` | `int` | How many equal partials the beat is split into. |
+| `partial`     | `int` | The partial (1-indexed) within the beat.        |
+
+### `Clef`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
 ### `CursorInfo`
 
 The cursor position and what is there.
@@ -541,14 +945,24 @@ A note length as a fraction of a whole note (1/4 is a quarter note).
 
 What sits at the cursor: a chord, a rest, a single note or something else.
 
-| Field      | Type                 | Description                          |
-| ---------- | -------------------- | ------------------------------------ |
-| `type`     | `int`                | The application's element type code. |
-| `notes`    | `list[Note] \| None` | The notes of a chord.                |
-| `duration` | `Duration \| None`   | The length of a chord or rest.       |
-| `pitch`    | `int \| None`        | MIDI pitch of a single note.         |
-| `tpc`      | `int \| None`        | Tonal pitch class of a single note.  |
-| `name`     | `str \| None`        | Name of a single note.               |
+| Field      | Type                 | Description                                                             |
+| ---------- | -------------------- | ----------------------------------------------------------------------- |
+| `type`     | `int \| str`         | The application's element type: MuseScore's code, Sibelius's type name. |
+| `notes`    | `list[Note] \| None` | The notes of a chord.                                                   |
+| `duration` | `Duration \| None`   | The length of a chord or rest.                                          |
+| `pitch`    | `int \| None`        | MIDI pitch of a single note.                                            |
+| `tpc`      | `int \| None`        | Tonal pitch class of a single note.                                     |
+| `name`     | `str \| None`        | Name of a single note.                                                  |
+
+### `GraceOrnament`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
+### `LineType`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
 
 ### `MeasureContent`
 
@@ -565,6 +979,11 @@ What sits at the cursor: a chord, a rest, a single note or something else.
 | `tpc`   | `int`         | Tonal pitch class, which fixes the spelling (C# versus Db). |
 | `name`  | `str \| None` | Note name with octave, when the application gives one.      |
 
+### `Notehead`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
 ### `Part`
 
 | Field         | Type  | Description                                    |
@@ -573,12 +992,22 @@ What sits at the cursor: a chord, a rest, a single note or something else.
 | `start_staff` | `int` | First staff of the part (0-indexed).           |
 | `end_staff`   | `int` | Last staff of the part (0-indexed, inclusive). |
 
+### `TextStyle`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+
 ### `TimeSignature`
 
 | Field         | Type  | Description |
 | ------------- | ----- | ----------- |
 | `numerator`   | `int` |             |
 | `denominator` | `int` |             |
+
+### `TremoloKind`
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
 
 ## CLI
 
@@ -589,13 +1018,15 @@ MCP server for music notation; runs the server by default.
 
 positional arguments:
   <command>
-    serve           run the MCP server (the default)
-    run             run a Python script with music21 available; extra
-                    arguments go to it
-    install         install the skill and the MuseScore plugin
-    install-skill   install the score-generate skill for Claude Code
-    install-plugin  install the bridge plugin into MuseScore
+    serve               run the MCP server (the default)
+    run                 run a Python script with music21 available; extra
+                        arguments go to it
+    install             install the skill and the MuseScore plugin
+    install-skill       install the score-generate skill for Claude Code
+    install-plugin      install the bridge plugin into MuseScore
+    install-sibelius-plugin
+                        install the bridge plug-in into Sibelius
 
 options:
-  -h, --help        show this help message and exit
+  -h, --help            show this help message and exit
 ```

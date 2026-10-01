@@ -90,7 +90,11 @@ READING_REASON = "the API triggers commands and cannot read the score"
 
 
 class HandshakeError(TransportError):
-    """The Remote Control handshake did not complete."""
+    """The connection handshake did not complete.
+
+    Sibelius Connect opens with the same ``connect`` message, so its
+    bridge raises this too.
+    """
 
 
 class RemoteControlBridge(WebSocketBridge):
