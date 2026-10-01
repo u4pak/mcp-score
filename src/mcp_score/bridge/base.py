@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from mcp_score.bridge.passage import PassageEvent, PassageWritten
     from mcp_score.bridge.results import (
         Articulation,
         ArticulationSet,
@@ -301,6 +302,14 @@ class ScoreBridge(ABC):
     async def add_sticking(self, sticking: list[str]) -> StickingAdded:
         """Write one sticking letter under each note from the current position."""
         raise self._not_supported("add sticking")
+
+    async def write_passage(self, events: list[PassageEvent]) -> PassageWritten:
+        """Write notes, rests and their markings from the current position.
+
+        Events follow each other (see :mod:`mcp_score.bridge.passage`); the
+        cursor ends after the last one.
+        """
+        raise self._not_supported("write passages")
 
     def _not_supported(self, operation: str) -> BridgeError:
         return BridgeError(

@@ -13,13 +13,12 @@ an edit.
 from __future__ import annotations
 
 import functools
-import re
 from typing import TYPE_CHECKING, Protocol
 
 from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_score.bridge import BridgeError
-from mcp_score.bridge.results import BeatPosition
+from mcp_score.bridge.results import BEAT_FORMAT, BeatPosition
 from mcp_score.context import registry_of
 
 if TYPE_CHECKING:
@@ -99,32 +98,6 @@ def require_measure(measure: int, name: str = "measure") -> None:
         raise ToolError(f"{name} must be >= 1.")
 
 
-BEAT_FORMAT = (
-    'a beat number (2), a counted partial ("2e", "2&" or "2+", "2a"; "2trip" '
-    'and "2let" for the second and third note of a triplet), or '
-    '"beat:partial/subdivision" ("4:3/5" is the third note of a quintuplet '
-    "on beat 4)"
-)
-"""How a tool argument names a point in a measure, for docstrings and errors."""
-
-# The syllables of counting, as (subdivision, partial): 1 e & a, 1 trip let.
-_COUNTED_PARTIALS: dict[str, tuple[int, int]] = {
-    "e": (4, 2),
-    "&": (2, 2),
-    "+": (2, 2),
-    "and": (2, 2),
-    "a": (4, 4),
-    "trip": (3, 2),
-    "let": (3, 3),
-}
-
-_BEAT = re.compile(
-    r"(?P<beat>\d+)\s*(?:(?P<counted>e|&|\+|and|a|trip|let)"
-    r"|:\s*(?P<partial>\d+)\s*/\s*(?P<subdivision>\d+))?",
-    re.IGNORECASE,
-)
-
-
 def parse_beat(value: int | str | None, name: str = "beat") -> BeatPosition | None:
     """Read a tool's beat argument (see :data:`BEAT_FORMAT`).
 
@@ -133,25 +106,10 @@ def parse_beat(value: int | str | None, name: str = "beat") -> BeatPosition | No
     """
     if value is None:
         return None
-    if isinstance(value, int):
-        if value < 1:
-            raise ToolError(f"{name} must be >= 1.")
-        return BeatPosition(beat=value)
-    match = _BEAT.fullmatch(value.strip())
-    if match is None:
-        raise ToolError(f"{name} must be {BEAT_FORMAT}; got {value!r}.")
-    beat = int(match["beat"])
-    if match["counted"] is not None:
-        subdivision, partial = _COUNTED_PARTIALS[match["counted"].lower()]
-    elif match["partial"] is not None:
-        partial, subdivision = int(match["partial"]), int(match["subdivision"])
-    else:
-        subdivision, partial = 1, 1
-    if beat < 1:
-        raise ToolError(f"{name} must be >= 1.")
-    if not 1 <= partial <= subdivision:
-        raise ToolError(f"{name}: partial must be between 1 and the subdivision.")
-    return BeatPosition(beat=beat, subdivision=subdivision, partial=partial)
+    try:
+        return BeatPosition.parse(value, name)
+    except ValueError as error:
+        raise ToolError(str(error)) from None
 
 
 def require_measure_range(start_measure: int, end_measure: int) -> None:

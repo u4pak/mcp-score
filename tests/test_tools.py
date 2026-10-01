@@ -20,6 +20,7 @@ import pytest
 from pydantic import BaseModel
 
 from mcp_score.bridge import BridgeError
+from mcp_score.bridge.passage import PassageEvent
 from mcp_score.bridge.results import (
     ApplicationReply,
     ArticulationSet,
@@ -51,6 +52,7 @@ from mcp_score.bridge.results import (
     TremoloSet,
     TupletAdded,
 )
+from mcp_score.server import create_server
 from mcp_score.tools import NOT_CONNECTED, ToolError, parse_beat, score_tool
 from mcp_score.tools.analysis import (
     MeasureContent,
@@ -86,6 +88,7 @@ from mcp_score.tools.manipulation import (
     set_live_tremolo,
     transpose_passage,
     undo_last_action,
+    write_live_passage,
 )
 from tests.fakes import WEBSOCKETS_CONNECT, BridgeCall, FakeBridge, fake_connection
 
@@ -115,6 +118,8 @@ def bind_arguments[**P, R: BaseModel](
 
 NAVIGATION_ERROR = "Measure 99 is beyond the end of the score"
 LIMITATION = "Only the selection's properties are available."
+
+QUARTER = Duration(numerator=1, denominator=4)
 
 CURSOR_AT_C4 = CursorInfo(measure=2, staff=0, voice=0, beat=1, tick=1920, element=None)
 """A cursor reading the fake application could report for measure 2."""
@@ -1453,3 +1458,151 @@ class TestNoteheadNumbers:
 
         # Assert
         assert connected_bridge.calls == []
+
+
+class TestWriteLivePassage:
+    @pytest.mark.anyio()
+    async def test_passage_from_json_reaches_the_bridge_in_one_call(
+        self,
+        registry: BridgeRegistry,
+        connected_bridge: FakeBridge,
+        context: ScoreContext,
+    ) -> None:
+        # Arrange: a flam accent, a triplet starting on the & of 2 and a rest
+        server = create_server(registry)
+        sixteenth = {"numerator": 1, "denominator": 16}
+        eighth = {"numerator": 1, "denominator": 8}
+        triplet = {"duration": eighth, "tuplet": {"actual": 3, "normal": 2}}
+        arguments = {
+            "measure": 2,
+            "events": [
+                {
+                    "pitch": 72,
+                    "duration": sixteenth,
+                    "notehead": 31,
+                    "articulations": ["accent"],
+                    "grace": "flam",
+                    "sticking": "L",
+                },
+                {"pitch": 72, **triplet, "beat": "2&"},
+                {"pitch": 72, **triplet},
+                {"pitch": [60, 64], **triplet, "tremolo": "buzz"},
+                {"pitch": None, "duration": eighth, "measure": 3, "beat": 1},
+            ],
+        }
+
+        # Act
+        await server.call_tool("write_live_passage", arguments, context=context)
+
+        # Assert
+        assert connected_bridge.calls[0] == BridgeCall("go_to_measure", (2,))
+        (passage,) = connected_bridge.calls_to("write_passage")
+        events: list[PassageEvent] = passage.arguments[0]
+        assert [event.beat for event in events] == [
+            None,
+            BeatPosition(beat=2, subdivision=2, partial=2),
+            None,
+            None,
+            BeatPosition(beat=1),
+        ]
+        assert events[0].notehead == 31
+        assert events[3].pitch == [60, 64]
+        assert events[4].pitch is None
+
+    @pytest.mark.anyio()
+    async def test_unreadable_beat_touches_nothing(
+        self,
+        registry: BridgeRegistry,
+        connected_bridge: FakeBridge,
+        context: ScoreContext,
+    ) -> None:
+        # Arrange
+        server = create_server(registry)
+        event = {"pitch": 60, "duration": {"numerator": 1, "denominator": 4}}
+
+        # Act
+        with pytest.raises(ToolError, match="got 'two'"):
+            await server.call_tool(
+                "write_live_passage",
+                {"measure": 1, "events": [{**event, "beat": "two"}]},
+                context=context,
+            )
+
+        # Assert
+        assert connected_bridge.calls == []
+
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize(
+        ("events", "error"),
+        [
+            pytest.param([], "events must not be empty.", id="empty"),
+            pytest.param(
+                [PassageEvent(pitch=[], duration=QUARTER)],
+                "Event 1: a chord needs at least one pitch.",
+                id="empty-chord",
+            ),
+            pytest.param(
+                [
+                    PassageEvent(pitch=60, duration=QUARTER),
+                    PassageEvent(pitch=128, duration=QUARTER),
+                ],
+                "Event 2: pitch must be between 0 and 127.",
+                id="pitch",
+            ),
+            pytest.param(
+                [PassageEvent(duration=Duration(numerator=0, denominator=4))],
+                "Event 1: duration must be a positive fraction.",
+                id="duration",
+            ),
+            pytest.param(
+                [PassageEvent(pitch=60, duration=QUARTER, measure=0)],
+                "Event 1: measure must be >= 1.",
+                id="measure",
+            ),
+            pytest.param(
+                [PassageEvent(pitch=60, duration=QUARTER, notehead=128)],
+                "Event 1: notehead number must be between 0 and 127.",
+                id="notehead",
+            ),
+            pytest.param(
+                [
+                    PassageEvent(
+                        pitch=60, duration=QUARTER, tremolo="single", tremolo_strokes=-1
+                    )
+                ],
+                "Event 1: tremolo_strokes must be >= 0.",
+                id="strokes",
+            ),
+            pytest.param(
+                [PassageEvent(pitch=60, duration=QUARTER, sticking=" ")],
+                "Event 1: sticking must not be blank.",
+                id="sticking",
+            ),
+        ],
+    )
+    async def test_invalid_event_touches_nothing(
+        self,
+        connected_bridge: FakeBridge,
+        context: ScoreContext,
+        events: list[PassageEvent],
+        error: str,
+    ) -> None:
+        # Act
+        with pytest.raises(ToolError, match=f"^{re.escape(error)}$"):
+            await write_live_passage(context, 1, events)
+
+        # Assert
+        assert connected_bridge.calls == []
+
+    @pytest.mark.anyio()
+    async def test_application_refusal_reaches_the_model(
+        self, connected_bridge: FakeBridge, context: ScoreContext
+    ) -> None:
+        # Arrange
+        connected_bridge.fail("write_passage", "mcp-score cannot write passages.")
+
+        # Act / Assert
+        with pytest.raises(ToolError, match="cannot write passages"):
+            await write_live_passage(
+                context, 1, [PassageEvent(pitch=60, duration=QUARTER)]
+            )

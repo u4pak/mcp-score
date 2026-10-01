@@ -7,12 +7,14 @@ method calls with the cursor it tracks) and how it reads what comes back.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, get_args
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from mcp_score.bridge import BridgeError
+from mcp_score.bridge.passage import PassageEvent
 from mcp_score.bridge.remote_control import DEFAULT_CLIENT_NAME, HANDSHAKE_VERSION
 from mcp_score.bridge.results import (
     Articulation,
@@ -1085,3 +1087,188 @@ class TestSibeliusNoteheadNumbers:
         # Assert
         assert _plugin_calls(connection) == [("SetNotehead", [2, 2, 0, 0, 1, 51])]
         assert result.notehead == 51
+
+
+# ── Passages ─────────────────────────────────────────────────────────
+
+
+def _passage(*fields: dict[str, Any]) -> list[PassageEvent]:
+    return [PassageEvent.model_validate(event) for event in fields]
+
+
+SIXTEENTH_FIELDS: dict[str, int] = {"numerator": 1, "denominator": 16}
+EIGHTH_FIELDS: dict[str, int] = {"numerator": 1, "denominator": 8}
+
+PASSAGE_DONE = plugin_reply(
+    {"measure": 2, "staff": 0, "position": 256, "events": 1, "notes": 1}
+)
+
+
+def _sent_events(connection: Connection) -> list[dict[str, Any]]:
+    (method, arguments) = _plugin_calls(connection)[-1]
+    assert method == "WritePassage"
+    return arguments[3]
+
+
+class TestSibeliusWritePassage:
+    @pytest.mark.anyio()
+    async def test_vdl_snare_figure_reaches_the_plugin_in_one_call(self) -> None:
+        # Arrange: a left-hand flammed accent, a right-hand buzz, a rest
+        bridge, connection = await _connected_bridge(PASSAGE_DONE)
+        events = _passage(
+            {
+                "pitch": 72,
+                "duration": SIXTEENTH_FIELDS,
+                "notehead": 31,
+                "articulations": ["accent"],
+                "grace": "flam",
+                "sticking": "L",
+                "dynamic": "f",
+            },
+            {
+                "pitch": 72,
+                "duration": SIXTEENTH_FIELDS,
+                "tremolo": "buzz",
+                "sticking": "R",
+            },
+            {"pitch": None, "duration": EIGHTH_FIELDS},
+        )
+
+        # Act
+        await bridge.write_passage(events)
+
+        # Assert
+        calls = _plugin_calls(connection)
+        assert len(calls) == 1
+        assert calls[0][1][:3] == [1, 0, 0]
+        first, buzz, rest = _sent_events(connection)
+        assert first == {
+            "bar": 0,
+            "offset_num": -1,
+            "offset_den": 1,
+            "pitches": [72],
+            "duration": 64,
+            "tuplet_actual": 0,
+            "tuplet_normal": 0,
+            "tuplet_index": -1,
+            "notehead": 31,
+            "articulations": [5],
+            "single_tremolo": -2,
+            "double_tremolo": -1,
+            "grace_count": 1,
+            "grace_slashed": True,
+            "grace_duration": 128,
+            "sticking": "L",
+            "dynamic": "f",
+        }
+        assert (buzz["single_tremolo"], buzz["sticking"]) == (-1, "R")
+        assert (rest["pitches"], rest["duration"]) == ([], 128)
+
+    @pytest.mark.anyio()
+    async def test_triplet_jump_chord_and_named_notehead(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(PASSAGE_DONE)
+        triplet = {"duration": EIGHTH_FIELDS, "tuplet": {"actual": 3, "normal": 2}}
+        events = _passage(
+            {"pitch": 60, "measure": 4, "beat": "2&", **triplet},
+            {"pitch": [60, 64], "notehead": "cross", **triplet},
+            {"pitch": 62, "tremolo": "double", "tremolo_strokes": 2, **triplet},
+        )
+
+        # Act
+        await bridge.write_passage(events)
+
+        # Assert
+        first, chord, last = _sent_events(connection)
+        assert (first["bar"], first["offset_num"], first["offset_den"]) == (4, 3, 2)
+        assert [event["tuplet_index"] for event in (first, chord, last)] == [0, 1, 2]
+        assert (first["tuplet_actual"], first["tuplet_normal"]) == (3, 2)
+        assert (chord["pitches"], chord["notehead"]) == ([60, 64], 1)
+        assert (last["double_tremolo"], last["single_tremolo"]) == (2, -2)
+
+    @pytest.mark.anyio()
+    async def test_cursor_continues_after_the_passage(self) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge(
+            PASSAGE_DONE, plugin_reply({"measure": 2, "staff": 0, "position": 320})
+        )
+        await bridge.write_passage(
+            _passage({"pitch": 60, "duration": {"numerator": 5, "denominator": 4}})
+        )
+
+        # Act
+        await bridge.add_note(60, Duration(numerator=1, denominator=16))
+
+        # Assert
+        assert _plugin_calls(connection)[-1] == ("AddNote", [2, 0, 256, 60, 64])
+
+    @pytest.mark.anyio()
+    @pytest.mark.parametrize(
+        ("events", "message"),
+        [
+            pytest.param([], "at least one event", id="empty"),
+            pytest.param(
+                [{"pitch": None, "duration": EIGHTH_FIELDS, "sticking": "R"}],
+                "Event 1: a rest takes no",
+                id="rest-with-sticking",
+            ),
+            pytest.param(
+                [{"pitch": 60, "duration": EIGHTH_FIELDS, "dynamic": "loud"}],
+                "Event 1: Sibelius writes dynamics",
+                id="unwritable-dynamic",
+            ),
+            pytest.param(
+                [
+                    {
+                        "pitch": 60,
+                        "duration": EIGHTH_FIELDS,
+                        "tremolo": "single",
+                        "tremolo_strokes": 9,
+                    }
+                ],
+                "0 to 7 tremolo strokes",
+                id="too-many-strokes",
+            ),
+            pytest.param(
+                [{"pitch": 60, "duration": {"numerator": 1, "denominator": 12}}],
+                "cannot write a note of 1/12",
+                id="unwritable-length",
+            ),
+            pytest.param(
+                [
+                    {
+                        "pitch": 60,
+                        "duration": EIGHTH_FIELDS,
+                        "tuplet": {"actual": 3, "normal": 2},
+                    }
+                ],
+                "The last tuplet needs 3 notes",
+                id="incomplete-tuplet",
+            ),
+        ],
+    )
+    async def test_unwritable_passage_is_refused_before_sending(
+        self, events: list[dict[str, Any]], message: str
+    ) -> None:
+        # Arrange
+        bridge, connection = await _connected_bridge()
+
+        # Act / Assert
+        with pytest.raises(BridgeError, match=re.escape(message)):
+            await bridge.write_passage(_passage(*events))
+        assert _plugin_calls(connection) == []
+
+    @pytest.mark.anyio()
+    async def test_plugin_failure_names_the_event(self) -> None:
+        # Arrange
+        failure = (
+            "Event 3: it does not fit in what is left of measure 1. "
+            "The events before it were written."
+        )
+        bridge, _ = await _connected_bridge(plugin_reply({"error": failure}))
+
+        # Act / Assert
+        with pytest.raises(BridgeError, match="^Event 3: it does not fit"):
+            await bridge.write_passage(
+                _passage({"pitch": 60, "duration": {"numerator": 1, "denominator": 1}})
+            )

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from mcp_score.bridge import BridgeError
 from mcp_score.bridge.musescore import DEFAULT_PORT, MuseScoreBridge
+from mcp_score.bridge.passage import PassageEvent
 from mcp_score.bridge.results import (
     BarlineSet,
     BeatPosition,
@@ -564,6 +565,18 @@ class TestMuseScoreBridgeSibeliusOnlyOperations:
                 partial(MuseScoreBridge.add_sticking, sticking=["R"]),
                 "add sticking",
                 id="add_sticking",
+            ),
+            pytest.param(
+                partial(
+                    MuseScoreBridge.write_passage,
+                    events=[
+                        PassageEvent(
+                            pitch=60, duration=Duration(numerator=1, denominator=4)
+                        )
+                    ],
+                ),
+                "write passages",
+                id="write_passage",
             ),
         ],
     )

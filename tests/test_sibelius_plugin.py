@@ -46,6 +46,7 @@ _BRIDGE_ARGUMENT_COUNTS: dict[PluginMethod, int] = {
     PluginMethod.SET_TREMOLO: 7,
     PluginMethod.ADD_GRACE_NOTES: 6,
     PluginMethod.ADD_STICKING: 4,
+    PluginMethod.WRITE_PASSAGE: 4,
 }
 
 

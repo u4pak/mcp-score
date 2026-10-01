@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from mcp_score.bridge.base import BridgeError
+from mcp_score.bridge.passage import PassageWritten, tuplet_indexes
 from mcp_score.bridge.remote_control import (
     DEFAULT_CLIENT_NAME,
     HANDSHAKE_VERSION,
@@ -73,6 +74,7 @@ from mcp_score.bridge.websocket import DEFAULT_HOST, WebSocketBridge
 
 if TYPE_CHECKING:
     from mcp_score.bridge.base import CommandResult
+    from mcp_score.bridge.passage import PassageEvent
     from mcp_score.bridge.results import (
         Articulation,
         Clef,
@@ -275,6 +277,7 @@ class PluginMethod(StrEnum):
     SET_TREMOLO = "SetTremolo"
     ADD_GRACE_NOTES = "AddGraceNotes"
     ADD_STICKING = "AddSticking"
+    WRITE_PASSAGE = "WritePassage"
 
 
 # ── What the plug-in returns where no result model fits ───────────────
@@ -338,6 +341,11 @@ class _LineReply(_PluginReply):
 
 
 class _TupletPlaced(_NotePlaced):
+    notes: int
+
+
+class _PassageReply(_NotePlaced):
+    events: int
     notes: int
 
 
@@ -899,6 +907,36 @@ class SibeliusBridge(WebSocketBridge):
             notes=reply.notes,
         )
 
+    async def write_passage(self, events: list[PassageEvent]) -> PassageWritten:
+        if not events:
+            raise BridgeError("A passage needs at least one event.")
+        try:
+            indexes = tuplet_indexes(events)
+        except ValueError as error:
+            raise BridgeError(str(error)) from None
+        payload = [
+            _passage_event(number, event, index)
+            for number, (event, index) in enumerate(
+                zip(events, indexes, strict=True), start=1
+            )
+        ]
+        reply = await self._run(
+            _PassageReply,
+            PluginMethod.WRITE_PASSAGE,
+            self._measure,
+            self._staff,
+            self._position,
+            payload,
+        )
+        self._measure = reply.measure
+        self._position = reply.position
+        return PassageWritten(
+            measure=reply.measure,
+            staff=reply.staff,
+            events=reply.events,
+            notes=reply.notes,
+        )
+
 
 def _offset(beats: Fraction | None) -> tuple[int, int]:
     """A point in a measure, in beats, as the numerator and denominator the
@@ -910,6 +948,87 @@ def _offset(beats: Fraction | None) -> tuple[int, int]:
     if beats is None:
         return -1, 1
     return beats.numerator, beats.denominator
+
+
+NO_SINGLE_TREMOLO = -2
+"""What the plug-in takes for "leave the stem's tremolo alone"."""
+
+
+def _passage_event(
+    number: int, event: PassageEvent, tuplet_index: int | None
+) -> dict[str, Any]:
+    """The Dictionary the plug-in's WritePassage reads for one event.
+
+    Raises:
+        BridgeError: When Sibelius cannot write the event as given.
+    """
+    pitches = (
+        []
+        if event.pitch is None
+        else [event.pitch]
+        if isinstance(event.pitch, int)
+        else event.pitch
+    )
+    rest = not pitches
+    if rest and (
+        event.notehead is not None
+        or event.articulations
+        or event.tremolo is not None
+        or event.grace is not None
+        or event.sticking
+    ):
+        raise BridgeError(
+            f"Event {number}: a rest takes no notehead, articulation, tremolo, "
+            "grace notes or sticking."
+        )
+    if event.dynamic and not DYNAMIC.fullmatch(event.dynamic):
+        raise BridgeError(
+            f"Event {number}: Sibelius writes dynamics with the letters p, m, f, "
+            f"r, s, z and n; {event.dynamic!r} is not one."
+        )
+    single_tremolo, double_tremolo = NO_SINGLE_TREMOLO, -1
+    if event.tremolo == "buzz":
+        single_tremolo = BUZZ_ROLL
+    elif event.tremolo is not None:
+        if not 0 <= event.tremolo_strokes <= MAX_TREMOLO_STROKES:
+            raise BridgeError(
+                f"Event {number}: Sibelius draws 0 to {MAX_TREMOLO_STROKES} "
+                "tremolo strokes."
+            )
+        if event.tremolo == "double":
+            double_tremolo = event.tremolo_strokes
+        else:
+            single_tremolo = event.tremolo_strokes
+    grace_count, grace_slashed, grace_length = (
+        (0, False, 0) if event.grace is None else GRACE_ORNAMENTS[event.grace]
+    )
+    offset_num, offset_den = _offset(None if event.beat is None else event.beat.start())
+    notehead = event.notehead
+    return {
+        "bar": event.measure or 0,
+        "offset_num": offset_num,
+        "offset_den": offset_den,
+        "pitches": pitches,
+        "duration": _length(event.duration, "note"),
+        "tuplet_actual": 0 if event.tuplet is None else event.tuplet.actual,
+        "tuplet_normal": 0 if event.tuplet is None else event.tuplet.normal,
+        "tuplet_index": -1 if tuplet_index is None else tuplet_index,
+        "notehead": (
+            -1
+            if notehead is None
+            else notehead
+            if isinstance(notehead, int)
+            else NOTEHEADS[notehead]
+        ),
+        "articulations": [ARTICULATIONS[name] for name in event.articulations],
+        "single_tremolo": single_tremolo,
+        "double_tremolo": double_tremolo,
+        "grace_count": grace_count,
+        "grace_slashed": grace_slashed,
+        "grace_duration": grace_length,
+        "sticking": (event.sticking or "").replace("\\", "\\\\"),
+        "dynamic": event.dynamic or "",
+    }
 
 
 def _length(duration: Duration, what: str) -> int:

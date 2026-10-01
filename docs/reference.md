@@ -712,6 +712,38 @@ lyrics, the usual way to engrave sticking. Sibelius only for now.
 | `staff`    | `int`       |                                                                         |
 | `notes`    | `int`       | How many notes got a letter; fewer than the letters when notes ran out. |
 
+### `write_live_passage`
+
+Write a whole passage of notes, rests and markings in one call.
+
+The fast way to write rhythms: each event is a note (`pitch`), a chord
+(a list of pitches) or a rest (`pitch` null) with a `duration`, and may
+carry a notehead (shape or VDL notehead number), articulations, a
+tremolo or buzz, a flam/drag/ruff, a sticking letter and a dynamic.
+Events start at the beginning of `measure` and follow each other,
+crossing bar lines; an event with `measure` and/or `beat` ("2&",
+"1trip", 3) jumps there first. Consecutive events with the same
+`tuplet` ratio and duration form tuplets: three events of 1/8 with
+tuplet {actual: 3, normal: 2} are an eighth-note triplet. The cursor
+ends after the passage, so add_live_note or another passage continues
+from there. If an event cannot be written, the error names it and the
+events before it stay written. Sibelius only for now.
+
+| Parameter | Type                 | Default    | Description                                |
+| --------- | -------------------- | ---------- | ------------------------------------------ |
+| `measure` | `int`                | (required) | Measure the passage starts in (1-indexed). |
+| `events`  | `list[PassageEvent]` | (required) | The notes, chords and rests, in order.     |
+| `staff`   | `int`                | `0`        | Staff index (0-indexed, default: 0).       |
+
+**Returns** `PassageWritten`: A passage was written; the position is where the cursor went afterwards.
+
+| Field     | Type  | Description                                                     |
+| --------- | ----- | --------------------------------------------------------------- |
+| `measure` | `int` | Measure number (1-indexed).                                     |
+| `staff`   | `int` | Staff index (0-indexed).                                        |
+| `events`  | `int` | How many events (notes, chords and rests) were written.         |
+| `notes`   | `int` | How many noteheads were written, counting each note of a chord. |
+
 ### `undo_last_action`
 
 Undo the last change in the connected application.

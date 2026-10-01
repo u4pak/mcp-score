@@ -135,7 +135,11 @@ The Sibelius tools cover what a battery and front ensemble score needs. Notes, r
 
 > "Accent the 'and' of 2 and the last triplet partial of beat 4 in measures 1-8 of the tenors."
 
-If the score uses the Virtual Drumline (VDL) template, the assistant can read the `vdl_notehead_guide` tool first. VDL picks each battery sound (left or right hand, shot, rim, dread, crush, roll) by notehead number, and the guide lists those numbers for `set_live_notehead`:
+To write a lot at once, the assistant can use `write_live_passage`: one call takes every note, chord and rest of a passage in order, each with its own notehead, accents, tremolo or buzz, flam, drag or ruff, sticking letter and dynamic, and tuplets. Asking for a few measures of a part at a time is much faster than note by note:
+
+> "Write measures 1-4 of the snare part: sixteenths RLRR LRLL on beats 1-2, an accented flam on 3, a buzz on 4, and repeat with a triplet on beat 2 of measure 3."
+
+If the score uses the Virtual Drumline (VDL) template, the assistant can read the `vdl_notehead_guide` tool first. VDL picks each battery sound (left or right hand, shot, rim, dread, crush, roll) by notehead number, and the guide lists those numbers for `set_live_notehead` and `write_live_passage`:
 
 > "In the SnareLine, make the notes on the e of every beat in measure 3 left-hand rim clicks."
 

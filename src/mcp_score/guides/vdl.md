@@ -17,10 +17,12 @@ noteheads, but they play different samples. When two sounds share a
 notehead number (a rim and a backstick, say), the staff position tells
 them apart.
 
-To get a sound, write the note and give it the sound's notehead number
-with `set_live_notehead` (it takes a number as well as a shape name).
-Pass `beat` to change only the note on one beat or partial, such as
-`"2&"` or `"1let"`. Read the passage back with `read_passage` to check.
+To get a sound, give each note the sound's notehead number in
+`write_live_passage` (its events take a `notehead` number), which writes
+a whole passage in one call. To change notes already written, use
+`set_live_notehead` (it takes a number as well as a shape name) and pass
+`beat` to change only the note on one beat or partial, such as `"2&"` or
+`"1let"`. Read the passage back with `read_passage` to check.
 
 - **Manual and AutoRL.** _Manual_ instruments have a left-hand and a
   right-hand notehead for each stroke (listed L / R below). _AutoRL_

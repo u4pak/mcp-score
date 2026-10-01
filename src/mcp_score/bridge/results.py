@@ -7,12 +7,14 @@ against it. The bridges build them from the applications' replies.
 
 from __future__ import annotations
 
+import re
 from fractions import Fraction
-from typing import Literal
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict
 
 __all__ = [
+    "BEAT_FORMAT",
     "ApplicationReply",
     "Articulation",
     "ArticulationSet",
@@ -238,6 +240,32 @@ class Transposed(Result):
 # ── Positions inside a measure ────────────────────────────────────────
 
 
+BEAT_FORMAT = (
+    'a beat number (2), a counted partial ("2e", "2&" or "2+", "2a"; "2trip" '
+    'and "2let" for the second and third note of a triplet), or '
+    '"beat:partial/subdivision" ("4:3/5" is the third note of a quintuplet '
+    "on beat 4)"
+)
+"""How a tool argument names a point in a measure, for docstrings and errors."""
+
+# The syllables of counting, as (subdivision, partial): 1 e & a, 1 trip let.
+_COUNTED_PARTIALS: dict[str, tuple[int, int]] = {
+    "e": (4, 2),
+    "&": (2, 2),
+    "+": (2, 2),
+    "and": (2, 2),
+    "a": (4, 4),
+    "trip": (3, 2),
+    "let": (3, 3),
+}
+
+_BEAT = re.compile(
+    r"(?P<beat>\d+)\s*(?:(?P<counted>e|&|\+|and|a|trip|let)"
+    r"|:\s*(?P<partial>\d+)\s*/\s*(?P<subdivision>\d+))?",
+    re.IGNORECASE,
+)
+
+
 class BeatPosition(Result):
     """A point in a measure: a beat, or a partial of one.
 
@@ -254,6 +282,34 @@ class BeatPosition(Result):
     """How many equal partials the beat is split into."""
     partial: int = 1
     """The partial (1-indexed) within the beat."""
+
+    @classmethod
+    def parse(cls, value: int | str, name: str = "beat") -> Self:
+        """Read a beat number or a counted partial (see :data:`BEAT_FORMAT`).
+
+        Raises:
+            ValueError: When *value* does not name a point in a measure; the
+                message names the argument as *name*.
+        """
+        if isinstance(value, int):
+            if value < 1:
+                raise ValueError(f"{name} must be >= 1.")
+            return cls(beat=value)
+        match = _BEAT.fullmatch(value.strip())
+        if match is None:
+            raise ValueError(f"{name} must be {BEAT_FORMAT}; got {value!r}.")
+        beat = int(match["beat"])
+        if match["counted"] is not None:
+            subdivision, partial = _COUNTED_PARTIALS[match["counted"].lower()]
+        elif match["partial"] is not None:
+            partial, subdivision = int(match["partial"]), int(match["subdivision"])
+        else:
+            subdivision, partial = 1, 1
+        if beat < 1:
+            raise ValueError(f"{name} must be >= 1.")
+        if not 1 <= partial <= subdivision:
+            raise ValueError(f"{name}: partial must be between 1 and the subdivision.")
+        return cls(beat=beat, subdivision=subdivision, partial=partial)
 
     def start(self) -> Fraction:
         """Where the partial starts, in beats from the start of the measure."""

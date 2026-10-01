@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from mcp_score.bridge.passage import PassageEvent, PassageWritten
 from mcp_score.bridge.results import (
     Articulation,
     ArticulationSet,
@@ -673,6 +674,70 @@ async def add_live_sticking(
     return await bridge.add_sticking(letters)
 
 
+@score_tool
+async def write_live_passage(
+    context: ScoreContext,
+    measure: int,
+    events: list[PassageEvent],
+    staff: int = 0,
+) -> PassageWritten:
+    """Write a whole passage of notes, rests and markings in one call.
+
+    The fast way to write rhythms: each event is a note (`pitch`), a chord
+    (a list of pitches) or a rest (`pitch` null) with a `duration`, and may
+    carry a notehead (shape or VDL notehead number), articulations, a
+    tremolo or buzz, a flam/drag/ruff, a sticking letter and a dynamic.
+    Events start at the beginning of `measure` and follow each other,
+    crossing bar lines; an event with `measure` and/or `beat` ("2&",
+    "1trip", 3) jumps there first. Consecutive events with the same
+    `tuplet` ratio and duration form tuplets: three events of 1/8 with
+    tuplet {actual: 3, normal: 2} are an eighth-note triplet. The cursor
+    ends after the passage, so add_live_note or another passage continues
+    from there. If an event cannot be written, the error names it and the
+    events before it stay written. Sibelius only for now.
+
+    Args:
+        measure: Measure the passage starts in (1-indexed).
+        events: The notes, chords and rests, in order.
+        staff: Staff index (0-indexed, default: 0).
+    """
+    bridge = require_bridge(context)
+    require_measure(measure)
+    if not events:
+        raise ToolError("events must not be empty.")
+    for number, event in enumerate(events, start=1):
+        _require_passage_event(number, event)
+    await navigate(bridge, measure, staff)
+    return await bridge.write_passage(events)
+
+
+def _require_passage_event(number: int, event: PassageEvent) -> None:
+    pitches = [event.pitch] if isinstance(event.pitch, int) else event.pitch or []
+    if isinstance(event.pitch, list) and not event.pitch:
+        raise ToolError(f"Event {number}: a chord needs at least one pitch.")
+    if any(not MIN_MIDI_PITCH <= pitch <= MAX_MIDI_PITCH for pitch in pitches):
+        raise ToolError(
+            f"Event {number}: pitch must be between {MIN_MIDI_PITCH} and "
+            f"{MAX_MIDI_PITCH}."
+        )
+    if event.duration.numerator < 1 or event.duration.denominator < 1:
+        raise ToolError(f"Event {number}: duration must be a positive fraction.")
+    if event.measure is not None and event.measure < 1:
+        raise ToolError(f"Event {number}: measure must be >= 1.")
+    if (
+        isinstance(event.notehead, int)
+        and not 0 <= event.notehead <= MAX_NOTEHEAD_NUMBER
+    ):
+        raise ToolError(
+            f"Event {number}: notehead number must be between 0 and "
+            f"{MAX_NOTEHEAD_NUMBER}."
+        )
+    if event.tremolo_strokes < 0:
+        raise ToolError(f"Event {number}: tremolo_strokes must be >= 0.")
+    if event.sticking is not None and not event.sticking.strip():
+        raise ToolError(f"Event {number}: sticking must not be blank.")
+
+
 def register(server: MCPServer) -> None:
     for tool in (
         add_live_note,
@@ -695,6 +760,7 @@ def register(server: MCPServer) -> None:
         set_live_tremolo,
         add_live_grace_notes,
         add_live_sticking,
+        write_live_passage,
         undo_last_action,
     ):
         server.tool()(tool)

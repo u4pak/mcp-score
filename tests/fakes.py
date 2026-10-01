@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from websockets.protocol import State
 
 from mcp_score.bridge import BridgeError, BridgeRegistry, CommandResult, ScoreBridge
+from mcp_score.bridge.passage import PassageEvent, PassageWritten
 from mcp_score.bridge.results import (
     Articulation,
     ArticulationSet,
@@ -162,6 +163,7 @@ DEFAULT_REPLIES: dict[str, BaseModel] = {
         notes=4,
     ),
     "add_grace_notes": GraceNotesAdded(ornament="flam", measure=1, staff=0, notes=1),
+    "write_passage": PassageWritten(measure=2, staff=0, events=4, notes=4),
     "add_sticking": StickingAdded(sticking=["R", "L"], measure=1, staff=0, notes=2),
 }
 """What a ``FakeBridge`` answers for each operation unless a test says otherwise."""
@@ -442,6 +444,9 @@ class FakeBridge(ScoreBridge):
 
     async def add_sticking(self, sticking: list[str]) -> StickingAdded:
         return self._answer(StickingAdded, "add_sticking", sticking)
+
+    async def write_passage(self, events: list[PassageEvent]) -> PassageWritten:
+        return self._answer(PassageWritten, "write_passage", events)
 
 
 # ── WebSocket doubles ────────────────────────────────────────────────

@@ -748,4 +748,178 @@ for index = 0 to bars.Length
 	}
 }
 return CreateDictionary('measure', bar, 'staff', staff, 'notes', bars.Length);}"
+	PassageFailure "(index, problem) {
+return Failure('Event ' & (index + 1) & ': ' & problem & '. The events before it were written.');}"
+	MarkNoteRest "(noteRest, event) {
+// Add a passage event's other chord notes and its markings to the note or
+// chord just written.
+pitches = event['pitches'];
+for chordIndex = 1 to pitches.Length
+{
+	noteRest.AddNote(pitches[chordIndex]);
+}
+if (event['notehead'] >= 0)
+{
+	for each note in noteRest
+	{
+		note.NoteStyle = event['notehead'];
+	}
+}
+articulations = event['articulations'];
+for articulationIndex = 0 to articulations.Length
+{
+	noteRest.SetArticulation(articulations[articulationIndex], True);
+}
+if (event['single_tremolo'] > -2)
+{
+	noteRest.SingleTremolos = event['single_tremolo'];
+}
+if (event['double_tremolo'] >= 0)
+{
+	noteRest.DoubleTremolos = event['double_tremolo'];
+}
+lowest = noteRest.Lowest;
+graces = 0;
+while (graces < event['grace_count'])
+{
+	if (event['grace_slashed'])
+	{
+		noteRest.AddAcciaccaturaBefore(lowest.Pitch, event['grace_duration'], False, 1, lowest.DiatonicPitch);
+	}
+	else
+	{
+		noteRest.AddAppoggiaturaBefore(lowest.Pitch, event['grace_duration'], False, 1, lowest.DiatonicPitch);
+	}
+	graces = graces + 1;
+}
+return True;}"
+	WritePassage "(bar, staff, position, events) {
+// Write events (notes, chords and rests with their markings) one after the
+// other from position in bar, moving into the next bar when one fills.
+// Each event is a Dictionary that SibeliusBridge.write_passage builds:
+// bar (0 to stay), offset_num/offset_den (offset_num -1 to stay), pitches
+// (empty for a rest), duration, tuplet_actual/tuplet_normal/tuplet_index
+// (index -1 outside a tuplet), notehead (-1 to keep), articulations,
+// single_tremolo (-2 for none, -1 buzz), double_tremolo (-1 for none),
+// grace_count, grace_slashed, grace_duration, sticking and dynamic ('' for
+// none).
+if (Sibelius.ScoreCount = 0)
+{
+	return Failure(_msgNoScore);
+}
+score = Sibelius.ActiveScore;
+problem = CheckPosition(score, bar, staff);
+if (problem != '')
+{
+	return Failure(problem);
+}
+notes = 0;
+tuplet = null;
+tupletStart = 0;
+for index = 0 to events.Length
+{
+	event = events[index];
+	tupletIndex = event['tuplet_index'];
+	if (tupletIndex < 1)
+	{
+		if (event['bar'] > 0)
+		{
+			bar = event['bar'];
+			position = 0;
+		}
+		if (event['offset_num'] >= 0)
+		{
+			problem = CheckBar(score, bar);
+			if (problem = '')
+			{
+				problem = CheckOffset(score, bar, staff, event['offset_num'], event['offset_den']);
+			}
+			if (problem != '')
+			{
+				return PassageFailure(index, problem);
+			}
+			position = OffsetPosition(score, bar, event['offset_num'], event['offset_den']);
+		}
+	}
+	problem = CheckBar(score, bar);
+	if (problem != '')
+	{
+		return PassageFailure(index, problem);
+	}
+	barObject = StaffBar(score, bar, staff);
+	duration = event['duration'];
+	pitches = event['pitches'];
+	pitch = 60;
+	if (pitches.Length > 0)
+	{
+		pitch = pitches[0];
+	}
+	if (tupletIndex < 0)
+	{
+		if ((position + duration) > barObject.Length)
+		{
+			return PassageFailure(index, 'it does not fit in what is left of measure ' & bar);
+		}
+		note = barObject.AddNote(position, pitch, duration);
+	}
+	else
+	{
+		if (tupletIndex = 0)
+		{
+			if ((position + (event['tuplet_normal'] * duration)) > barObject.Length)
+			{
+				return PassageFailure(index, 'the tuplet does not fit in what is left of measure ' & bar);
+			}
+			tuplet = barObject.AddTuplet(position, 1, event['tuplet_actual'], event['tuplet_normal'], duration);
+			if (tuplet = null)
+			{
+				return PassageFailure(index, 'Sibelius could not add the tuplet');
+			}
+			tupletStart = position;
+		}
+		note = tuplet.AddNote(tupletIndex * duration, pitch, duration);
+	}
+	if (note = null)
+	{
+		return PassageFailure(index, 'Sibelius could not write it');
+	}
+	noteRest = note.ParentNoteRest;
+	// Read these first: a rest's placeholder note is deleted below.
+	eventPosition = noteRest.Position;
+	eventLength = noteRest.Duration;
+	if (pitches.Length = 0)
+	{
+		noteRest.Delete();
+	}
+	else
+	{
+		MarkNoteRest(noteRest, event);
+		notes = notes + noteRest.NoteCount;
+	}
+	if (event['sticking'] != '')
+	{
+		barObject.AddLyric(eventPosition, eventLength, event['sticking']);
+	}
+	if (event['dynamic'] != '')
+	{
+		barObject.AddText(eventPosition, '\\ctext.character.musictext\\' & event['dynamic'], 'text.staff.expression');
+	}
+	if (tupletIndex < 0)
+	{
+		position = position + duration;
+	}
+	else
+	{
+		if (tupletIndex = (event['tuplet_actual'] - 1))
+		{
+			position = tupletStart + (event['tuplet_normal'] * duration);
+		}
+	}
+	if (position >= barObject.Length)
+	{
+		bar = bar + 1;
+		position = 0;
+	}
+}
+return CreateDictionary('measure', bar, 'staff', staff, 'position', position, 'events', events.Length, 'notes', notes);}"
 }
