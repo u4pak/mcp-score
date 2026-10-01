@@ -42,7 +42,7 @@ __all__ = [
 
 NOT_CONNECTED = (
     "Not connected to any score application. "
-    "Use connect_to_musescore or connect_to_dorico first."
+    "Use connect_to_musescore, connect_to_dorico or connect_to_sibelius first."
 )
 
 

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from mcp_score.bridge.dorico import DoricoBridge
 from mcp_score.bridge.musescore import MuseScoreBridge
+from mcp_score.bridge.sibelius import SibeliusBridge
 
 if TYPE_CHECKING:
     from mcp_score.bridge.base import ScoreBridge
@@ -27,9 +28,11 @@ class BridgeRegistry:
         self,
         musescore: MuseScoreBridge | None = None,
         dorico: DoricoBridge | None = None,
+        sibelius: SibeliusBridge | None = None,
     ) -> None:
         self.musescore = musescore if musescore is not None else MuseScoreBridge()
         self.dorico = dorico if dorico is not None else DoricoBridge()
+        self.sibelius = sibelius if sibelius is not None else SibeliusBridge()
         self.active: ScoreBridge | None = None
 
     def connected(self) -> ScoreBridge | None:

@@ -103,6 +103,10 @@ All modifications happen immediately in MuseScore.
 
 Dorico support is experimental: it uses Dorico's undocumented Remote Control WebSocket API, is command-only (it cannot read note content), and has not been verified against a running Dorico instance. To try it, enable Remote Control in Dorico's preferences and ask Claude to "Connect to Dorico."
 
+## Live Sibelius manipulation (experimental)
+
+Sibelius support is experimental: Sibelius Connect speaks the same command-only Remote Control protocol as Dorico (it cannot read note content), and it has not been verified against a running Sibelius instance. It requires Sibelius Ultimate 2024.3 or later. To try it, enable Sibelius Connect in Sibelius's preferences and ask Claude to "Connect to Sibelius."
+
 ## Next steps
 
 - [Architecture](architecture.md) -- understand how mcp-score is structured

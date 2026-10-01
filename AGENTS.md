@@ -3,7 +3,7 @@
 AI-driven music score generation and manipulation, for any MCP client. Three jobs:
 
 - **Score generation** — the assistant writes a music21 Python script that exports MusicXML. In Claude Code the bundled `score-generate` skill (`.claude/skills/score-generate/`) drives this without MCP. In other clients the `generate_score` tool runs the script and `score_generation_guide` (also the `score-generate` MCP prompt) serves the same instructions.
-- **Live score manipulation** via MCP server — reads from and writes to a running MuseScore Studio 4.4.2+ (or experimentally Dorico) via WebSocket bridge.
+- **Live score manipulation** via MCP server — reads from and writes to a running MuseScore Studio 4.4.2+ (or experimentally Dorico or Sibelius) via WebSocket bridge.
 - **Rendering** — `render_score` exports PDF, PNG, MIDI, audio or MusicXML through the MuseScore command line.
 
 Follow the code standards in [CONVENTIONS.md](CONVENTIONS.md).
@@ -19,7 +19,7 @@ src/mcp_score/
   resources.py        Locate bundled files (skill directory, plugin directory)
   tools/
     base.py           Shared tool plumbing: ToolError, score_tool, bridge and measure guards
-    connection.py     Connect/disconnect MuseScore & Dorico, ping, score info
+    connection.py     Connect/disconnect MuseScore, Dorico & Sibelius, ping, score info
     analysis.py       Read passages and measures from live score
     manipulation.py   Modify live score (notes, rehearsal marks, dynamics, chords, barlines, keys, time, tempo, measures, transpose, undo)
     generate.py       Run music21 scripts and serve the score-generate guide (any MCP client)
@@ -28,9 +28,10 @@ src/mcp_score/
     base.py           ScoreBridge abstract interface and BridgeError
     results.py        The result models every operation returns (published as tool output schemas)
     websocket.py      WebSocketTransport and WebSocketBridge (connection lifecycle, reconnect)
-    remote_control.py Remote Control protocol layer (used by Dorico)
+    remote_control.py Remote Control protocol layer (used by Dorico and Sibelius)
     musescore.py      MuseScore plugin protocol on WebSocketBridge
     dorico.py         Dorico defaults (thin subclass of RemoteControlBridge, experimental)
+    sibelius.py       Sibelius Connect defaults (thin subclass of RemoteControlBridge, experimental)
     registry.py       BridgeRegistry: the bridges and which one is active
   musescore/
     paths.py          Where MuseScore keeps user files (plugins directory)
@@ -90,7 +91,7 @@ Integration tests against a real MuseScore are opt-in; see [CONTRIBUTING.md](CON
 ## Repo-specific conventions
 
 - **Conventional commits** — enforced by `.githooks/commit-msg`
-- **Thin subclasses over monolithic duplicated implementations** — protocol logic lives in `RemoteControlBridge`; app-specific bridges (Dorico) only override defaults
+- **Thin subclasses over monolithic duplicated implementations** — protocol logic lives in `RemoteControlBridge`; app-specific bridges (Dorico, Sibelius) only override defaults
 - **Test non-triviality** — no issubclass checks, json.dumps wrappers, or constant assertions. Every test must cover a meaningful code path
 - **Test deduplication** — shared protocol logic is tested once in the base class test file, not repeated per subclass. Per-subclass tests cover only subclass-specific behavior (defaults, overrides)
 - **No counts in docs that drift** — no tool, command or test counts in documentation. List things by name or describe them; numbers go stale silently
@@ -99,7 +100,7 @@ Integration tests against a real MuseScore are opt-in; see [CONTRIBUTING.md](CON
 
 MCP tools fall into these categories:
 
-1. **Connection** — manage WebSocket bridges to MuseScore and Dorico
+1. **Connection** — manage WebSocket bridges to MuseScore, Dorico and Sibelius
 2. **Analysis** — read and understand musical content from the live score
 3. **Manipulation** — modify the live score (notes, rehearsal marks, dynamics, chords, barlines, keys, time signatures, tempo, measures, transpose, undo)
 4. **Generation** — run a music21 script (`generate_score`) and serve the skill text (`score_generation_guide`) so clients other than Claude Code get the same workflow
@@ -111,7 +112,7 @@ In Claude Code, generation is handled by the `score-generate` skill — Claude w
 
 The rationale lives in [docs/architecture.md](docs/architecture.md#key-design-decisions) and the decision ledger in [issue #91](https://github.com/tskovlund/mcp-score/issues/91). The constraints to keep in mind while coding:
 
-- **MuseScore Studio 4.4.2+ only** for the live plugin; older versions lack the plugin WebSocket API. Dorico is experimental; Sibelius is out.
+- **MuseScore Studio 4.4.2+ only** for the live plugin; older versions lack the plugin WebSocket API. Dorico and Sibelius (via Sibelius Connect) are experimental.
 - **MusicXML** is the interchange format; never generate `.mscz`/`.mscx`.
 - **PyPI name `mcp-score-server`**; the import package `mcp_score` and the CLI `mcp-score` keep their names.
 - **Integration tests run against real MuseScore** in CI on all three platforms; the versions live in `tests/integration/musescore-versions.json`.

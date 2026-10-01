@@ -2,8 +2,9 @@
 
 MuseScore reports what sits under its cursor; the tools move the cursor
 measure by measure, so a passage comes back as one entry per measure with
-the element at the start of that measure. Dorico's Remote Control API has
-no cursor: the only thing it can read is the selection's properties.
+the element at the start of that measure. The Remote Control API of
+Dorico and Sibelius has no cursor: the only thing it can read is the
+selection's properties.
 """
 
 from __future__ import annotations
@@ -64,8 +65,8 @@ async def read_passage(
     For each measure MuseScore reports the cursor position (measure, staff,
     voice, beat, tick) and the element at the start of the measure on that
     staff: its type, and for a note or chord its pitches and duration. It
-    does not list every element in the measure. Not available with Dorico,
-    which cannot read score content.
+    does not list every element in the measure. Not available with Dorico
+    or Sibelius, which cannot read score content.
 
     Args:
         start_measure: First measure to read (1-indexed).
@@ -98,8 +99,8 @@ async def get_measure_content(
 
     The selection becomes visible in the score, ready for a manual edit;
     the result names the selected measure and staff, not its content (use
-    read_passage for that). Not available with Dorico, which cannot move to
-    a staff or select a measure.
+    read_passage for that). Not available with Dorico or Sibelius, which
+    cannot move to a staff or select a measure.
 
     Args:
         measure: Measure number (1-indexed).
@@ -121,8 +122,9 @@ async def get_selection_properties(context: ScoreContext) -> SelectionProperties
     """Get properties of the current selection in the connected application.
 
     MuseScore reports the cursor position (measure, beat, staff, element).
-    Dorico reports the names, types and values of every property of the
-    selected items, which is the closest its API gets to reading the score.
+    Dorico and Sibelius report the names, types and values of every
+    property of the selected items, which is the closest their API gets to
+    reading the score.
     """
     bridge = require_bridge(context)
     properties = await bridge.get_properties()

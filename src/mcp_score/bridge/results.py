@@ -136,8 +136,8 @@ class CursorInfo(CursorPosition):
 class SelectionProperties(Result):
     """What the application reports about the current selection.
 
-    MuseScore reports the cursor position; Dorico reports the properties
-    of the selected items as they come from its API.
+    MuseScore reports the cursor position; Dorico and Sibelius report the
+    properties of the selected items as they come from their API.
     """
 
     cursor: CursorInfo | None = None

@@ -5,7 +5,8 @@ error, navigation, what the bridge is asked to do) is tested here once,
 against a ``FakeBridge`` behind the context a tool receives from the
 server. A tool that cannot do what was asked raises ``ToolError``; an
 application's refusal (``BridgeError``) reaches the model the same way.
-Dorico-specific behaviour lives in ``test_dorico_tools.py``.
+Dorico- and Sibelius-specific behaviour lives in ``test_dorico_tools.py``
+and ``test_sibelius_tools.py``.
 """
 
 from __future__ import annotations

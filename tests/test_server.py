@@ -31,6 +31,8 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "disconnect_from_musescore",
         "connect_to_dorico",
         "disconnect_from_dorico",
+        "connect_to_sibelius",
+        "disconnect_from_sibelius",
         "get_live_score_info",
         "ping_score_app",
         # analysis
